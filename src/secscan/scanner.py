@@ -11,11 +11,12 @@ from secscan import __version__
 from secscan.grading import grade_for, score_findings
 from secscan.headers import check_all
 from secscan.models import Category, Finding, ScanResult, Status, TLSInfo
-from secscan.tls import evaluate_tls, probe_tls
+from secscan.tls import create_verified_context, evaluate_tls, probe_tls
 
 USER_AGENT = f"secscan/{__version__} (+https://github.com/hunter1on1/secscan)"
 
-TLSProbe = Callable[[str, int, float], TLSInfo]
+# Called as probe(host, port, timeout, ca_bundle=...); see tls.probe_tls.
+TLSProbe = Callable[..., TLSInfo]
 
 
 class TargetError(ValueError):
@@ -87,12 +88,14 @@ def scan(
     client: httpx.Client | None = None,
     tls_probe: TLSProbe | None = probe_tls,
     timeout: float = 10.0,
+    ca_bundle: str | None = None,
 ) -> ScanResult:
     """Scan one target and return a graded :class:`ScanResult`.
 
     `client` and `tls_probe` can be injected, which is how the tests run the
     whole pipeline without touching the network. Pass ``tls_probe=None`` to
-    skip the TLS checks.
+    skip the TLS checks. `ca_bundle` overrides the trusted CA file (default:
+    SSL_CERT_FILE if set, otherwise certifi's bundle).
     """
     result = ScanResult(target=target)
     try:
@@ -102,7 +105,12 @@ def scan(
         return result
 
     own_client = client is None
-    client = client or httpx.Client(timeout=timeout, headers={"User-Agent": USER_AGENT})
+    client = client or httpx.Client(
+        timeout=timeout,
+        headers={"User-Agent": USER_AGENT},
+        # Same trust store as the TLS checks, so both always agree.
+        verify=create_verified_context(ca_bundle),
+    )
     try:
         # 1. Fetch the HTTPS page and check its headers.
         try:
@@ -122,7 +130,7 @@ def scan(
 
     # 3. Certificate and protocol versions.
     if tls_probe is not None:
-        result.tls = tls_probe(host, port, timeout)
+        result.tls = tls_probe(host, port, timeout, ca_bundle=ca_bundle)
         result.findings.extend(evaluate_tls(result.tls))
 
     result.score = score_findings(result.findings)

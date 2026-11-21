@@ -119,3 +119,55 @@ def test_probe_tls_legacy_only_server(monkeypatch):
     found = by_id(tls.evaluate_tls(info))
     assert found["certificate"].critical
     assert found["proto-TLSv1.0"].deduction == 10
+
+
+def test_ca_bundle_defaults_to_certifi(monkeypatch):
+    import certifi
+
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    assert tls.resolve_ca_bundle() == certifi.where()
+
+
+def test_ca_bundle_priority(monkeypatch):
+    monkeypatch.setenv("SSL_CERT_FILE", "/env/ca.pem")
+    assert tls.resolve_ca_bundle() == "/env/ca.pem"
+    assert tls.resolve_ca_bundle("/flag/ca.pem") == "/flag/ca.pem"
+
+
+def test_probe_tls_uses_certifi_context(monkeypatch):
+    """The verified handshake must trust certifi's roots, not the OS store."""
+    seen = []
+
+    def fake_create_default_context(cafile=None):
+        seen.append(cafile)
+        return ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+
+    def fake_handshake(host, port, context, timeout):
+        return "TLSv1.3", FAKE_CERT
+
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    monkeypatch.setattr(tls.ssl, "create_default_context", fake_create_default_context)
+    monkeypatch.setattr(tls, "_handshake", fake_handshake)
+    tls.probe_tls("example.com")
+    import certifi
+
+    assert seen == [certifi.where()]
+
+
+def test_local_issuer_error_gets_a_hint():
+    info = good_tls()
+    info.certificate = CertificateInfo(
+        valid=False,
+        error="unable to get local issuer certificate",
+    )
+    cert = by_id(tls.evaluate_tls(info))["certificate"]
+    assert cert.critical
+    assert "local CA-store problem" in cert.detail
+    assert "--ca-bundle" in cert.detail
+
+
+def test_other_errors_have_no_ca_hint():
+    info = good_tls()
+    info.certificate = CertificateInfo(valid=False, error="certificate has expired")
+    cert = by_id(tls.evaluate_tls(info))["certificate"]
+    assert "CA-store" not in cert.detail

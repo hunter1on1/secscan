@@ -65,6 +65,7 @@ secscan --file targets.txt               # one URL per line, '#' starts a commen
 secscan example.com --json > report.json # machine-readable output
 secscan example.com --no-tls             # headers only, skip TLS probing
 secscan example.com --min-grade B        # exit code 1 if the grade is below B (for CI)
+secscan intranet.local --ca-bundle corp-ca.pem  # trust a custom/internal CA
 ```
 
 | Option | Description |
@@ -72,11 +73,25 @@ secscan example.com --min-grade B        # exit code 1 if the grade is below B (
 | `-f, --file PATH` | Read targets from a file |
 | `--json` | Print results as JSON instead of tables |
 | `--no-tls` | Skip certificate and protocol checks |
+| `--ca-bundle PATH` | PEM file of trusted CA certificates (default: `$SSL_CERT_FILE`, else certifi) |
 | `--timeout SECONDS` | Network timeout (default 10) |
 | `--min-grade GRADE` | Fail (exit 1) if any target scores below `GRADE` |
 | `-q, --quiet` | Hide the recommendations list |
 
 Exit codes: `0` success, `1` a target is below `--min-grade`, `2` a target could not be scanned.
+
+### Trusted certificates
+
+Certificates are verified against the [certifi](https://pypi.org/project/certifi/) CA bundle
+(Mozilla's list of trusted roots), for both the HTTP requests and the TLS checks. Results
+are therefore the same on every machine and don't depend on how Python or the OS was
+installed. For example, python.org builds on macOS ship without a usable trust store until
+you run *Install Certificates.command*, and secscan still works there.
+
+To trust a different set of roots (a corporate proxy or an internal CA), pass
+`--ca-bundle PATH` or set `SSL_CERT_FILE`. Priority: `--ca-bundle` > `SSL_CERT_FILE` > certifi.
+If a certificate fails with *unable to get local issuer certificate*, secscan adds a hint
+that the problem may be the local trust store rather than the site.
 
 ### Sample output
 

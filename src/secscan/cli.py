@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import os
+import ssl
 import sys
 from collections.abc import Sequence
 
@@ -12,7 +14,7 @@ from secscan import __version__
 from secscan.grading import GRADE_ORDER, meets_minimum
 from secscan.report import render, to_json
 from secscan.scanner import scan
-from secscan.tls import probe_tls
+from secscan.tls import create_verified_context, probe_tls, resolve_ca_bundle
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -26,6 +28,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--json", action="store_true", help="print results as JSON")
     parser.add_argument(
         "--no-tls", action="store_true", help="skip certificate and protocol checks (headers only)"
+    )
+    parser.add_argument(
+        "--ca-bundle",
+        metavar="PATH",
+        help="PEM file of trusted CA certificates (default: $SSL_CERT_FILE, else certifi)",
     )
     parser.add_argument("--timeout", type=float, default=10.0, help="network timeout in seconds")
     parser.add_argument(
@@ -56,17 +63,28 @@ def main(argv: Sequence[str] | None = None) -> int:
             parser.error(f"cannot read {args.file}: {exc}")
     if not targets:
         parser.error("give at least one URL or --file")
+    if args.ca_bundle and not os.path.isfile(args.ca_bundle):
+        parser.error(f"CA bundle not found: {args.ca_bundle}")
+    try:
+        # Fail early with a clear message if the bundle (or SSL_CERT_FILE) is unusable.
+        create_verified_context(args.ca_bundle)
+    except (ssl.SSLError, OSError) as exc:
+        parser.error(f"cannot load CA bundle {resolve_ca_bundle(args.ca_bundle)}: {exc}")
 
     console = Console()
     tls_probe = None if args.no_tls else probe_tls
     results = []
     for target in targets:
         if args.json:
-            result = scan(target, timeout=args.timeout, tls_probe=tls_probe)
+            result = scan(
+                target, timeout=args.timeout, tls_probe=tls_probe, ca_bundle=args.ca_bundle
+            )
         else:
             # Show a spinner while the network calls run.
             with console.status(f"Scanning {target}..."):
-                result = scan(target, timeout=args.timeout, tls_probe=tls_probe)
+                result = scan(
+                    target, timeout=args.timeout, tls_probe=tls_probe, ca_bundle=args.ca_bundle
+                )
             render(result, console, verbose=not args.quiet)
         results.append(result)
 

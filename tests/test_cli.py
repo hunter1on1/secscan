@@ -57,3 +57,24 @@ def test_table_output(fake_scan, capsys):
 def test_no_targets_is_an_error(capsys):
     with pytest.raises(SystemExit):
         cli.main([])
+
+
+def test_ca_bundle_flag(fake_scan, tmp_path, capsys):
+    import certifi
+
+    bundle = certifi.where()
+    cli.main(["good.example", "--ca-bundle", str(bundle), "--json"])
+    assert fake_scan[0][1]["ca_bundle"] == str(bundle)
+
+
+def test_missing_ca_bundle_is_an_error(fake_scan, capsys):
+    with pytest.raises(SystemExit):
+        cli.main(["good.example", "--ca-bundle", "/does/not/exist.pem"])
+
+
+def test_unloadable_ca_bundle_is_an_error(fake_scan, tmp_path, capsys):
+    bundle = tmp_path / "empty.pem"
+    bundle.write_text("")
+    with pytest.raises(SystemExit):
+        cli.main(["good.example", "--ca-bundle", str(bundle)])
+    assert "cannot load CA bundle" in capsys.readouterr().err

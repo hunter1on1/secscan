@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "secscan"
-version = "0.1.0"
+version = "0.1.1"
 description = "Grade a website's HTTP security headers and TLS configuration from the command line."
 readme = "README.md"
 license = { text = "MIT" }
@@ -24,6 +24,7 @@ classifiers = [
 dependencies = [
     "httpx>=0.25",
     "rich>=13.0",
+    "certifi>=2023.7.22",
 ]
 
 [project.optional-dependencies]

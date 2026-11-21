@@ -32,7 +32,9 @@ def make_client(https_headers: dict, http_redirects: bool = True) -> httpx.Clien
     return httpx.Client(transport=httpx.MockTransport(handler))
 
 
-def good_tls(host: str = "example.com", port: int = 443, timeout: float = 10) -> TLSInfo:
+def good_tls(
+    host: str = "example.com", port: int = 443, timeout: float = 10, ca_bundle: str | None = None
+) -> TLSInfo:
     return TLSInfo(
         host=host,
         port=port,

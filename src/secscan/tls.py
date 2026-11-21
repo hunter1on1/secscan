@@ -10,11 +10,14 @@ The module is split in two halves:
 
 from __future__ import annotations
 
+import os
 import socket
 import ssl
 import time
 import warnings
 from datetime import datetime, timezone
+
+import certifi
 
 from secscan.models import Category, CertificateInfo, Finding, Status, TLSInfo
 
@@ -26,6 +29,27 @@ PROTOCOLS: dict[str, ssl.TLSVersion] = {
     "TLSv1.3": ssl.TLSVersion.TLSv1_3,
 }
 LEGACY_PROTOCOLS = ("TLSv1.0", "TLSv1.1")
+
+# OpenSSL's message when it cannot build a chain to any trusted root. On a
+# healthy site this almost always means the *local* trust store is empty or
+# outdated (e.g. python.org Python on macOS before "Install Certificates").
+LOCAL_ISSUER_ERROR = "unable to get local issuer certificate"
+
+
+def resolve_ca_bundle(ca_bundle: str | None = None) -> str:
+    """Pick the CA bundle used to verify certificates.
+
+    Priority: an explicit path (--ca-bundle) > the SSL_CERT_FILE environment
+    variable > certifi's bundle (Mozilla's list of trusted roots, shipped as a
+    Python package). Using certifi by default makes results identical on every
+    machine instead of depending on how the OS or Python was installed.
+    """
+    return ca_bundle or os.environ.get("SSL_CERT_FILE") or certifi.where()
+
+
+def create_verified_context(ca_bundle: str | None = None) -> ssl.SSLContext:
+    """A browser-like context: verifies the chain and the hostname."""
+    return ssl.create_default_context(cafile=resolve_ca_bundle(ca_bundle))
 
 
 def _handshake(host: str, port: int, context: ssl.SSLContext, timeout: float) -> tuple[str, dict]:
@@ -101,13 +125,15 @@ def probe_protocol(host: str, port: int, version: ssl.TLSVersion, timeout: float
         return None  # timeout, DNS failure, or unsupported locally
 
 
-def probe_tls(host: str, port: int = 443, timeout: float = 10.0) -> TLSInfo:
+def probe_tls(
+    host: str, port: int = 443, timeout: float = 10.0, ca_bundle: str | None = None
+) -> TLSInfo:
     """Collect certificate and protocol information for host:port."""
     info = TLSInfo(host=host, port=port)
 
     # 1. A normal, fully verified handshake - exactly what a browser does.
     try:
-        version, cert = _handshake(host, port, ssl.create_default_context(), timeout)
+        version, cert = _handshake(host, port, create_verified_context(ca_bundle), timeout)
         info.reachable = True
         info.negotiated_version = version
         info.certificate = parse_certificate(cert)
@@ -160,12 +186,18 @@ def evaluate_tls(info: TLSInfo) -> list[Finding]:
 
     # --- Certificate validity and expiry -----------------------------------
     if not cert.valid:
+        detail = f"Not trusted: {cert.error}"
+        if LOCAL_ISSUER_ERROR in cert.error.lower():
+            detail += (
+                " (this may be a local CA-store problem rather than the site: "
+                "try --ca-bundle PATH, or check SSL_CERT_FILE)"
+            )
         findings.append(
             _finding(
                 "certificate",
                 "Certificate",
                 Status.FAIL,
-                f"Not trusted: {cert.error}",
+                detail,
                 recommendation="Install a valid certificate from a trusted CA "
                 "that covers this hostname.",
                 critical=True,
@@ -202,7 +234,7 @@ def evaluate_tls(info: TLSInfo) -> list[Finding]:
             findings.append(_finding("certificate", "Certificate", Status.PASS, detail))
 
     # --- Hostname match ---------------------------------------------------------
-    # ssl.create_default_context() checks the hostname during the handshake, so
+    # The verified context checks the hostname during the handshake, so
     # a trusted certificate already implies a match.
     if cert.valid:
         findings.append(

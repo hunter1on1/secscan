@@ -78,3 +78,14 @@ def test_http_error_page_is_not_counted_as_insecure(secure_headers):
     redirect = next(f for f in result.findings if f.check_id == "https-redirect")
     assert redirect.status.value == "info" and redirect.deduction == 0
     assert result.grade == "A+"
+
+
+def test_ca_bundle_is_passed_to_tls_probe(secure_headers):
+    seen = {}
+
+    def probe(host, port, timeout, ca_bundle=None):
+        seen["ca_bundle"] = ca_bundle
+        return good_tls(host, port)
+
+    scan("example.com", client=make_client(secure_headers), tls_probe=probe, ca_bundle="/x.pem")
+    assert seen["ca_bundle"] == "/x.pem"
