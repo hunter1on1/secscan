@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "secscan"
-version = "0.1.1"
-description = "Grade a website's HTTP security headers and TLS configuration from the command line."
+version = "0.2.0"
+description = "Grade a website's security headers, cookies, CORS, mixed content, security.txt and TLS from the command line, with fix advice and HTML/SARIF reports."
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "hunter1on1" }]
 requires-python = ">=3.10"
-keywords = ["security", "http-headers", "tls", "scanner", "cli", "appsec"]
+keywords = ["security", "http-headers", "tls", "cors", "cookies", "sarif", "scanner", "cli", "appsec"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
@@ -28,7 +28,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.4", "pytest-cov>=4.1", "ruff>=0.5"]
+dev = ["pytest>=7.4", "pytest-cov>=4.1", "ruff>=0.5", "jsonschema>=4.0"]
 
 [project.scripts]
 secscan = "secscan.cli:main"

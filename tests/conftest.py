@@ -17,8 +17,23 @@ SECURE_HEADERS = {
 }
 
 
-def make_client(https_headers: dict, http_redirects: bool = True) -> httpx.Client:
-    """A client whose "network" is a function: no real requests are made."""
+VALID_SECURITY_TXT = "Contact: mailto:security@example.com\nExpires: 2099-01-01T00:00:00.000Z\n"
+
+
+def make_client(
+    https_headers: dict,
+    http_redirects: bool = True,
+    body: str = "<html><body><p>hi</p></body></html>",
+    set_cookies: list[str] | None = None,
+    security_txt: str | None = VALID_SECURITY_TXT,
+    cors_headers: dict | None = None,
+) -> httpx.Client:
+    """A client whose "network" is a function: no real requests are made.
+
+    * ``/.well-known/security.txt`` returns `security_txt` (404 if None)
+    * a request carrying an Origin header gets `cors_headers` added; the
+      special value "{origin}" is replaced by the Origin that was sent
+    """
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.scheme == "http":
@@ -27,7 +42,18 @@ def make_client(https_headers: dict, http_redirects: bool = True) -> httpx.Clien
                     301, headers={"Location": str(request.url.copy_with(scheme="https"))}
                 )
             return httpx.Response(200, text="plain http")
-        return httpx.Response(200, headers=https_headers, text="<html></html>")
+        if request.url.path == "/.well-known/security.txt":
+            if security_txt is None:
+                return httpx.Response(404, text="not found")
+            return httpx.Response(
+                200, text=security_txt, headers={"Content-Type": "text/plain; charset=utf-8"}
+            )
+        headers = [("Content-Type", "text/html; charset=utf-8"), *https_headers.items()]
+        headers += [("Set-Cookie", c) for c in set_cookies or []]
+        origin = request.headers.get("origin")
+        if origin and cors_headers:
+            headers += [(k, v.replace("{origin}", origin)) for k, v in cors_headers.items()]
+        return httpx.Response(200, headers=headers, text=body)
 
     return httpx.Client(transport=httpx.MockTransport(handler))
 

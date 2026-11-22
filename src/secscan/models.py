@@ -22,6 +22,23 @@ class Status(str, Enum):
 class Category(str, Enum):
     HEADERS = "headers"
     TLS = "tls"
+    COOKIES = "cookies"
+    CORS = "cors"
+    CONTENT = "content"  # what the page itself loads (mixed content)
+    DISCLOSURE = "disclosure"  # security.txt and version leaks
+
+
+@dataclass
+class Advice:
+    """How to fix a finding: a plain explanation plus copy-paste config.
+
+    `snippets` maps a platform name ("nginx", "apache", "cloudflare",
+    "netlify", "vercel", "app") to a ready-to-paste configuration snippet.
+    """
+
+    summary: str
+    snippets: dict[str, str] = field(default_factory=dict)
+    references: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -36,6 +53,7 @@ class Finding:
     recommendation: str = ""
     deduction: int = 0  # points removed from the 100-point score
     critical: bool = False  # a critical finding caps the grade at F
+    advice: Advice | None = None  # attached to WARN/FAIL findings, see advice.py
 
     def to_dict(self) -> dict:
         data = asdict(self)

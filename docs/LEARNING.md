@@ -175,7 +175,141 @@ penetration-test reports.
 
 ---
 
-## 9. Concepts from the code itself
+## 9. Cookies: Secure, HttpOnly, SameSite
+
+HTTP is stateless, so websites remember you with **cookies**. After you log in, the
+server sends something like:
+
+```
+Set-Cookie: sessionid=8f3a...; Path=/; Secure; HttpOnly; SameSite=Lax
+```
+
+and your browser sends `sessionid` back with every request. Whoever has that value *is*
+you, as far as the site is concerned. Stealing it is called **session hijacking**. The
+three flags each close a different door:
+
+| Flag | Without it... | Attack it stops |
+|------|---------------|-----------------|
+| `Secure` | the cookie is also sent over plain `http://` | Sniffing on public Wi-Fi |
+| `HttpOnly` | JavaScript can read it with `document.cookie` | XSS stealing the session |
+| `SameSite=Lax` | it's attached to requests started by *other* sites | **CSRF**: a hostile page submitting a form to your bank as you |
+
+`SameSite` values: `Strict` (never sent cross-site), `Lax` (sent only on top-level
+navigation such as clicking a link; Chrome and Edge apply it by default), `None` (always sent, and
+only allowed together with `Secure`).
+
+secscan only demands `HttpOnly` on cookies whose names look like sessions or tokens,
+because some cookies (UI preferences, consent banners) are meant to be read by
+JavaScript. Bonus: cookie names starting with `__Host-` or `__Secure-` are **prefixes**
+that make browsers enforce `Secure` for you.
+
+Try it: DevTools > **Application** > **Cookies** shows these flags as columns.
+
+---
+
+## 10. CORS (Cross-Origin Resource Sharing)
+
+First, the **Same-Origin Policy (SOP)**: JavaScript on `https://evil.example` may *send*
+a request to `https://bank.example`, but it may not *read* the response. An **origin** is
+scheme + host + port. The SOP is what stops any website from reading your email in
+another tab.
+
+**CORS** is the controlled way for a server to relax the SOP:
+
+```
+Access-Control-Allow-Origin: https://app.bank.example
+Access-Control-Allow-Credentials: true
+```
+
+means "JavaScript on `app.bank.example` may read this, even with the user's cookies".
+
+The classic misconfiguration is a lazy allow-list that **echoes back whatever `Origin`
+the request had**, combined with `Allow-Credentials: true`. Now *every* website the
+victim visits can fetch their private data with their cookies and read it.
+
+How secscan tests it: it sends `Origin: https://secscan-cors-probe.invalid` (`.invalid`
+is a domain reserved so it can never exist) and checks whether the server trusts it.
+
+| Response | Verdict |
+|----------|---------|
+| No `Access-Control-Allow-Origin` | Fine: nobody else may read |
+| A fixed, specific origin | Fine |
+| `*` without credentials | Fine for public data (CDNs, public APIs). Browsers never send cookies with `*` |
+| Our fake origin reflected | Risky: everyone is trusted |
+| Our fake origin reflected **and** `Allow-Credentials: true` | Serious: any site can read logged-in users' data |
+| `null` trusted | Same as reflection: sandboxed iframes let an attacker send `Origin: null` |
+
+Further reading: https://portswigger.net/web-security/cors (with free labs).
+
+---
+
+## 11. Mixed content
+
+An HTTPS page that loads something over `http://` is **mixed content**. That one request
+travels unencrypted, so an attacker on the network can read or replace it:
+
+- **Active** mixed content (`<script>`, stylesheets, `<iframe>`, `<object>`): replacing
+  one script means controlling the whole page. Browsers block it, which also breaks
+  the site.
+- **Passive** mixed content (`<img>`, `<audio>`, `<video>`): can be swapped or used for
+  tracking. Browsers now try to upgrade it to HTTPS automatically.
+
+Fix: use `https://` (or relative `//` and `/` URLs) everywhere. Safety net:
+`Content-Security-Policy: upgrade-insecure-requests` makes the browser rewrite
+`http://` to `https://` before fetching.
+
+secscan parses the page with Python's built-in `html.parser`. Note that plain links
+(`<a href="http://...">`) are *navigation*, not mixed content, so they are not flagged.
+It only sees the initial HTML, so resources added later by JavaScript won't show up.
+The browser console (F12) catches those.
+
+Try it: open https://mixed-script.badssl.com with DevTools open and read the console.
+
+---
+
+## 12. security.txt (RFC 9116)
+
+If you find a bug in someone's website, who do you tell? `security.txt` answers that.
+It's a small text file at `https://example.com/.well-known/security.txt`:
+
+```
+Contact: mailto:security@example.com
+Expires: 2027-12-31T23:59:59.000Z
+Preferred-Languages: en
+Policy: https://example.com/security-policy
+```
+
+`Contact` and `Expires` are required. `Expires` makes sure outdated contacts don't stay
+around forever (keep it under a year ahead). It's part of **responsible disclosure**:
+researchers report privately, the company fixes the bug, and only then is it made public.
+Big companies often point `Contact` to a **bug bounty** platform (GitHub's goes to
+HackerOne). Those programs are where you can legally practise on real targets.
+
+secscan also checks that the response really is `text/plain`, because many sites answer
+*every* unknown URL with their homepage and status 200 (a "soft 404").
+
+Try it: `curl https://github.com/.well-known/security.txt`
+
+---
+
+## 13. More information leaks: X-AspNet-Version and friends
+
+Section 8 covered `Server` and `X-Powered-By`. Microsoft's ASP.NET adds two more by
+default:
+
+```
+X-AspNet-Version: 4.0.30319
+X-AspNetMvc-Version: 5.2
+```
+
+They exist only to announce versions, so any value counts as a leak. They're turned off in
+`web.config` (`enableVersionHeader="false"`). Attackers collect these during
+**reconnaissance**, the first phase of any attack (and of any penetration test), to
+match the target against public CVE databases.
+
+---
+
+## 14. Concepts from the code itself
 
 - **Defence in depth**: no single header is enough; each one covers a different attack.
 - **Pure functions + dependency injection**: checks don't touch the network, and the
@@ -183,6 +317,11 @@ penetration-test reports.
   how the tests run offline, and it's a habit worth keeping for any security tool.
 - **Fail safe**: anything we can't verify is reported as INFO instead of guessed, and a
   site we can't reach gets an F rather than a misleading score.
+- **Output encoding**: the HTML report escapes every value from the scanned site with
+  `html.escape`. A security tool that writes HTML must not itself be vulnerable to XSS
+  (`tests/test_html_report.py` checks this with a malicious header).
+- **Standards over invention**: SARIF (OASIS) for findings, RFC 9116 for security.txt,
+  RFC 3339 for dates. Using standards means other tools (like GitHub) understand you.
 
 ## Practice ideas
 
@@ -191,12 +330,22 @@ penetration-test reports.
    the grade change.
 3. Try https://badssl.com hosts (`expired.badssl.com`, `wrong.host.badssl.com`) to see
    certificate failures.
-4. Pick an item from the README roadmap (cookie flags is a good first one) and build it,
-   tests first.
+4. Scan `https://mixed.badssl.com` and `https://mixed-script.badssl.com` and compare the
+   mixed-content results (passive vs active).
+5. Scan `https://httpbin.org/get` and read the CORS finding. Then test it yourself:
+   `curl -sI -H "Origin: https://evil.example" https://httpbin.org/get | grep -i access-control`
+6. Write a `security.txt` for your own site and check it with secscan.
+7. Run `secscan yoursite --sarif out.sarif` and open the file: find the `ruleId`,
+   `level` and `security-severity` of each result.
+8. Pick an item from the README roadmap and build it, tests first.
 
 ## References
 
 - OWASP Secure Headers Project: https://owasp.org/www-project-secure-headers/
 - MDN HTTP security: https://developer.mozilla.org/docs/Web/Security
 - Mozilla Observatory (a similar tool, for comparison): https://developer.mozilla.org/observatory
-- RFC 6797 (HSTS), RFC 8446 (TLS 1.3), RFC 8996 (deprecating TLS 1.0/1.1)
+- RFC 6797 (HSTS), RFC 8446 (TLS 1.3), RFC 8996 (deprecating TLS 1.0/1.1),
+  RFC 6265bis (cookies), RFC 9116 (security.txt)
+- PortSwigger Web Security Academy (free labs on CORS, CSRF, XSS, clickjacking):
+  https://portswigger.net/web-security
+- SARIF 2.1.0 specification: https://docs.oasis-open.org/sarif/sarif/v2.1.0/

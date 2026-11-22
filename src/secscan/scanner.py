@@ -1,4 +1,13 @@
-"""Orchestrates one scan: fetch the page, run header and TLS checks, grade."""
+"""Orchestrates one scan: fetch the page, run every check, grade.
+
+Requests made per target (all ordinary requests a browser would make):
+
+1. GET the HTTPS page (headers, cookies, HTML for mixed content)
+2. GET the same page again with an Origin header (CORS)
+3. GET /.well-known/security.txt
+4. GET http://host/ to confirm the redirect to HTTPS
+5. A few TLS handshakes (certificate and protocol versions)
+"""
 
 from __future__ import annotations
 
@@ -8,12 +17,28 @@ from urllib.parse import urlsplit
 import httpx
 
 from secscan import __version__
+from secscan.advice import attach_advice
+from secscan.cookies import check_cookies
+from secscan.cors import PROBE_ORIGIN, check_cors
 from secscan.grading import grade_for, score_findings
 from secscan.headers import check_all
+from secscan.mixedcontent import check_mixed_content
 from secscan.models import Category, Finding, ScanResult, Status, TLSInfo
+from secscan.securitytxt import PATH as SECURITY_TXT_PATH
+from secscan.securitytxt import check_security_txt
 from secscan.tls import create_verified_context, evaluate_tls, probe_tls
 
 USER_AGENT = f"secscan/{__version__} (+https://github.com/hunter1on1/secscan)"
+
+# Order in which categories appear in reports.
+CATEGORY_ORDER = [
+    Category.HEADERS,
+    Category.COOKIES,
+    Category.CORS,
+    Category.CONTENT,
+    Category.DISCLOSURE,
+    Category.TLS,
+]
 
 # Called as probe(host, port, timeout, ca_bundle=...); see tls.probe_tls.
 TLSProbe = Callable[..., TLSInfo]
@@ -82,6 +107,44 @@ def check_https_redirect(client: httpx.Client, host: str) -> Finding:
     )
 
 
+def check_page_content(response: httpx.Response) -> Finding:
+    """Mixed-content check on the HTML of the final HTTPS page."""
+    content_type = response.headers.get("content-type", "")
+    if "html" not in content_type.lower():
+        return Finding(
+            "mixed-content",
+            "Mixed content",
+            Category.CONTENT,
+            Status.INFO,
+            f"Not an HTML page ({content_type or 'no content type'}); skipped.",
+        )
+    return check_mixed_content(response.text, response.headers.get("content-security-policy"))
+
+
+def check_cors_policy(client: httpx.Client, url: str) -> Finding:
+    """Send the request a browser would send for a cross-origin fetch."""
+    try:
+        response = client.get(url, headers={"Origin": PROBE_ORIGIN}, follow_redirects=True)
+    except httpx.HTTPError as exc:
+        return Finding(
+            "cors", "CORS policy", Category.CORS, Status.INFO, f"CORS request failed: {exc}"
+        )
+    return check_cors(response.headers, PROBE_ORIGIN)
+
+
+def fetch_security_txt(client: httpx.Client, base_url: str) -> Finding:
+    parts = urlsplit(base_url)
+    try:
+        response = client.get(
+            f"{parts.scheme}://{parts.netloc}{SECURITY_TXT_PATH}", follow_redirects=True
+        )
+    except httpx.HTTPError:
+        return check_security_txt(None, "", "")
+    return check_security_txt(
+        response.status_code, response.headers.get("content-type", ""), response.text
+    )
+
+
 def scan(
     target: str,
     *,
@@ -117,7 +180,33 @@ def scan(
             response = client.get(url, follow_redirects=True)
             result.final_url = str(response.url)
             result.status_code = response.status_code
+            if response.url.scheme == "http":
+                result.findings.append(
+                    Finding(
+                        "https-downgrade",
+                        "HTTPS -> HTTP downgrade",
+                        Category.TLS,
+                        Status.FAIL,
+                        f"The HTTPS page redirects to plain HTTP ({response.url}); visitors "
+                        "end up on an unencrypted page. Header results below describe that "
+                        "HTTP response.",
+                        recommendation="Keep every redirect on https://.",
+                        deduction=20,
+                    )
+                )
             result.findings.extend(check_all(response.headers))
+
+            # Cookies may be set on any hop of a redirect chain, not just the
+            # final page, so collect Set-Cookie from every response.
+            set_cookies = [
+                value
+                for r in (*response.history, response)
+                for value in r.headers.get_list("set-cookie")
+            ]
+            result.findings.extend(check_cookies(set_cookies))
+            result.findings.append(check_cors_policy(client, result.final_url))
+            result.findings.append(check_page_content(response))
+            result.findings.append(fetch_security_txt(client, result.final_url))
         except httpx.HTTPError as exc:
             result.error = f"HTTPS request failed: {exc}"
 
@@ -132,6 +221,11 @@ def scan(
     if tls_probe is not None:
         result.tls = tls_probe(host, port, timeout, ca_bundle=ca_bundle)
         result.findings.extend(evaluate_tls(result.tls))
+
+    # Group findings by category (sorted() is stable, so order within a
+    # category is preserved) and attach fix advice to WARN/FAIL findings.
+    result.findings.sort(key=lambda f: CATEGORY_ORDER.index(f.category))
+    attach_advice(result.findings)
 
     result.score = score_findings(result.findings)
     result.grade = grade_for(result.score, result.findings)

@@ -78,3 +78,49 @@ def test_unloadable_ca_bundle_is_an_error(fake_scan, tmp_path, capsys):
     with pytest.raises(SystemExit):
         cli.main(["good.example", "--ca-bundle", str(bundle)])
     assert "cannot load CA bundle" in capsys.readouterr().err
+
+
+def test_html_and_sarif_files(fake_scan, tmp_path, capsys):
+    html, sarif = tmp_path / "r.html", tmp_path / "r.sarif"
+    assert cli.main(["good.example", "--json", "--html", str(html), "--sarif", str(sarif)]) == 0
+    assert html.read_text().startswith("<!doctype html>")
+    assert json.loads(sarif.read_text())["version"] == "2.1.0"
+    captured = capsys.readouterr()
+    json.loads(captured.out)  # stdout is still pure JSON
+    assert "HTML report written" in captured.err
+
+
+def test_platform_option_validation(capsys):
+    with pytest.raises(SystemExit):
+        cli.main(["good.example", "--platform", "iis"])
+    assert "unknown platform" in capsys.readouterr().err
+
+
+def test_explain_shows_snippets(monkeypatch, capsys):
+    from secscan import scanner
+
+    from .conftest import good_tls, make_client
+
+    def _scan(target, **kwargs):
+        return scanner.scan(target, client=make_client({}), tls_probe=good_tls)
+
+    monkeypatch.setattr(cli, "scan", _scan)
+    cli.main(["example.com", "--explain", "--platform", "nginx"])
+    out = capsys.readouterr().out
+    assert "How to fix" in out
+    assert "add_header Strict-Transport-Security" in out
+    assert "vercel.json" not in out  # filtered out by --platform
+
+
+def test_default_output_is_concise(monkeypatch, capsys):
+    from secscan import scanner
+
+    from .conftest import good_tls, make_client
+
+    monkeypatch.setattr(
+        cli, "scan", lambda t, **kw: scanner.scan(t, client=make_client({}), tls_probe=good_tls)
+    )
+    cli.main(["example.com"])
+    out = capsys.readouterr().out
+    assert "Recommendations" in out and "--explain" in out
+    assert "add_header" not in out

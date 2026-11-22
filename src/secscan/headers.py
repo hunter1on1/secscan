@@ -113,11 +113,16 @@ def check_csp(headers: Mapping[str, str]) -> Finding:
     value = _get(headers, "Content-Security-Policy")
     title = "Content-Security-Policy"
     if value is None:
+        # Report-Only policies are a normal rollout step, but browsers only
+        # *report* violations; nothing is blocked yet.
+        report_only = _get(headers, "Content-Security-Policy-Report-Only") is not None
         return _finding(
             "csp",
             title,
             Status.FAIL,
-            "Header missing: no browser-side XSS mitigation.",
+            "Only a Report-Only policy is set: violations are reported, not blocked."
+            if report_only
+            else "Header missing: no browser-side XSS mitigation.",
             recommendation="Start with: Content-Security-Policy: default-src 'self'; "
             "object-src 'none'; frame-ancestors 'self' and tighten from there.",
             deduction=20,
@@ -293,6 +298,16 @@ def check_permissions_policy(headers: Mapping[str, str]) -> Finding:
 # --------------------------------------------------------------------------- #
 _VERSION_RE = re.compile(r"\d+(\.\d+)+|/\d")
 
+# Headers that exist only to announce framework versions. Any value leaks.
+_VERSION_HEADERS = {
+    "X-AspNet-Version": "aspnet-version",
+    "X-AspNetMvc-Version": "aspnetmvc-version",
+}
+
+
+def _leak(check_id: str, title: str, status: Status, detail: str, **kw) -> Finding:
+    return Finding(check_id, title, Category.DISCLOSURE, status, detail, **kw)
+
 
 def check_info_leak(headers: Mapping[str, str]) -> list[Finding]:
     """Headers that advertise software and versions help attackers pick exploits.
@@ -305,25 +320,25 @@ def check_info_leak(headers: Mapping[str, str]) -> list[Finding]:
     server = _get(headers, "Server")
     if server and _VERSION_RE.search(server):
         findings.append(
-            _finding(
+            _leak(
                 "server",
                 "Server header",
                 Status.WARN,
                 f"Discloses version: {server!r}",
-                recommendation="Hide the version (e.g. nginx: server_tokens off; "
+                recommendation="Hide the version (nginx: server_tokens off; "
                 "Apache: ServerTokens Prod).",
                 deduction=5,
             )
         )
     elif server:
         findings.append(
-            _finding("server", "Server header", Status.INFO, f"{server!r} (no version disclosed)")
+            _leak("server", "Server header", Status.INFO, f"{server!r} (no version disclosed)")
         )
 
     powered = _get(headers, "X-Powered-By")
     if powered:
         findings.append(
-            _finding(
+            _leak(
                 "powered-by",
                 "X-Powered-By",
                 Status.WARN,
@@ -331,6 +346,25 @@ def check_info_leak(headers: Mapping[str, str]) -> list[Finding]:
                 recommendation="Remove the X-Powered-By header.",
                 deduction=5,
             )
+        )
+
+    for header, check_id in _VERSION_HEADERS.items():
+        value = _get(headers, header)
+        if value:
+            findings.append(
+                _leak(
+                    check_id,
+                    header,
+                    Status.WARN,
+                    f"Discloses framework version: {value!r}",
+                    recommendation=f"Stop sending {header} (see --explain for config).",
+                    deduction=5,
+                )
+            )
+
+    if not findings:
+        findings.append(
+            _leak("server", "Version disclosure", Status.PASS, "No software versions in headers.")
         )
     return findings
 

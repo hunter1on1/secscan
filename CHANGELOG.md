@@ -4,6 +4,40 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## 0.2.0 - 2026-11-22
+
+### Added
+- **Cookie checks**: `Secure`, `HttpOnly` (for session-like cookies) and `SameSite` on
+  every `Set-Cookie`, including cookies set on redirect hops. Cookie values are never
+  printed.
+- **CORS check**: sends a browser-style `Origin` header (reserved `.invalid` domain) and
+  flags reflected or `null` origins, especially with `Allow-Credentials: true`.
+- **Mixed content check**: finds `http://` scripts, stylesheets, frames and objects
+  (active) and images/media (passive) in the HTML of the HTTPS page; recognises CSP
+  `upgrade-insecure-requests`.
+- **security.txt check** (RFC 9116): present, `text/plain`, `Contact` and a valid,
+  unexpired `Expires` (RFC 3339 parser that also works on Python 3.10).
+- **Version disclosure** now also covers `X-AspNet-Version` and `X-AspNetMvc-Version`.
+- **HTTPS -> HTTP downgrade**: flags HTTPS URLs whose redirects end on plain HTTP.
+- **Fix advice** for every warning and failure: explanation plus copy-paste snippets for
+  Nginx, Apache, Cloudflare, Netlify / Cloudflare Pages, Vercel and application code.
+  Shown with `--explain` (filter with `--platform`), included in JSON.
+- **HTML report** (`--html PATH`): self-contained, no scripts or external assets,
+  light/dark mode, print-friendly, everything from the scanned site HTML-escaped.
+- **SARIF 2.1.0 export** (`--sarif PATH`, `--sarif-artifact PATH`) with
+  `security-severity`, stable fingerprints and fix advice as rule help, for GitHub code
+  scanning. Validated against the official OASIS schema in the tests.
+- CSP detail mentions when only a `Content-Security-Policy-Report-Only` policy exists.
+- Findings are grouped by area (headers, cookies, CORS, content, disclosure, TLS) in all
+  outputs, and the summary shows passed/warning/failed/info counts.
+- `docs/LEARNING.md`: new sections on cookies, CORS, mixed content, security.txt and
+  ASP.NET version headers, plus new practice exercises.
+
+### Changed
+- `Server` / `X-Powered-By` findings moved to the new `disclosure` category.
+- Scores now include the new checks (see the README scoring table), so some sites grade
+  lower than with 0.1.x.
+
 ## 0.1.1 - 2026-11-21
 
 ### Fixed

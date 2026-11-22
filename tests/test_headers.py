@@ -100,4 +100,21 @@ def test_info_leak_flags_versions_only():
 
     findings = h.check_info_leak({"Server": "cloudflare"})
     assert [f.status for f in findings] == [Status.INFO]
-    assert h.check_info_leak({}) == []
+    assert [f.status for f in h.check_info_leak({})] == [Status.PASS]
+
+
+@pytest.mark.parametrize(
+    ("header", "check_id"),
+    [("X-AspNet-Version", "aspnet-version"), ("X-AspNetMvc-Version", "aspnetmvc-version")],
+)
+def test_aspnet_version_headers(header, check_id):
+    (finding,) = h.check_info_leak({header: "4.0.30319"})
+    assert finding.check_id == check_id
+    assert finding.status == Status.WARN and finding.deduction == 5
+    assert finding.category.value == "disclosure"
+
+
+def test_csp_report_only_is_mentioned():
+    finding = h.check_csp({"Content-Security-Policy-Report-Only": "default-src 'self'"})
+    assert finding.status == Status.FAIL
+    assert "Report-Only" in finding.detail
