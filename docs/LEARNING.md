@@ -387,7 +387,8 @@ Cloudflare Transform Rule.
    one with `--no-detect` and see how the advice changes.
 9. Open your browser's developer tools (Network tab) on any site and try to guess its
    platform from the response headers alone, before secscan tells you.
-10. Pick an item from the README roadmap and build it, tests first.
+10. Pick a check secscan doesn't do yet (for example Subresource Integrity on third-party
+    scripts) and build it, tests first.
 
 ## References
 

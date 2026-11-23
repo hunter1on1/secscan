@@ -49,7 +49,7 @@ uses [Semantic Versioning](https://semver.org/).
 ### Changed
 - `--platform` now also accepts hosting platform ids, not only snippet formats.
 - `Server` / `X-Powered-By` findings moved to the new `disclosure` category.
-- Scores now include the new checks (see the README scoring table), so some sites grade
+- Scores now include the new checks (see docs/SCORING.md), so some sites grade
   lower than with 0.1.x.
 
 ## 0.1.1 - 2026-11-21

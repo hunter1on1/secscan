@@ -1,8 +1,8 @@
 """Turn findings into a 0-100 score and a letter grade.
 
-The scheme is intentionally simple and transparent (see README "How grading
-works"): every site starts at 100 points, each finding removes a fixed number
-of points, and any *critical* finding (e.g. an untrusted certificate) forces
+The scheme is intentionally simple and transparent (see docs/SCORING.md):
+every site starts at 100 points, each finding removes a fixed number of
+points, and any *critical* finding (e.g. an untrusted certificate) forces
 an F no matter what the score is.
 """
 
