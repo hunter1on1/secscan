@@ -15,6 +15,7 @@ from html import escape
 from secscan import __version__
 from secscan.advice import PLATFORM_LABELS, PLATFORMS
 from secscan.models import Finding, ScanResult, Status
+from secscan.platforms import RESPONSIBILITY_LABELS, describe, snippet_platforms
 from secscan.report import CATEGORY_LABELS, needs_fix
 
 _GRADE_CLASS = {"A+": "a", "A": "a", "B": "b", "C": "c", "D": "d", "F": "f"}
@@ -63,6 +64,13 @@ header.top h1 span { color: var(--muted); font-weight: 500; }
 .pill.fail { background: var(--fail-bg); color: var(--fail); }
 .pill.info { background: var(--info-bg); color: var(--info); }
 .error { color: var(--fail); font-weight: 600; }
+.who { display: inline-block; padding: 1px 8px; border-radius: 6px; font-size: 12px;
+  white-space: nowrap; border: 1px solid var(--line); }
+.who-you { color: var(--pass); } .who-settings { color: var(--warn); }
+.who-platform { color: var(--muted); }
+.yourpart { margin-top: 10px; font-size: 14px; }
+.platform-steps { border-left: 3px solid var(--info); padding: 6px 12px; margin: 10px 0;
+  background: var(--bg); border-radius: 0 6px 6px 0; }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line);
   vertical-align: top; }
@@ -114,11 +122,12 @@ def _overview(results: Sequence[ScanResult]) -> str:
         rows.append(
             f'<tr><td><a href="#{_anchor(i)}">{escape(r.target)}</a></td>'
             f"<td><strong>{escape(r.grade)}</strong></td><td>{r.score}/100</td>"
-            f"<td>{counts[Status.FAIL]}</td><td>{counts[Status.WARN]}</td></tr>"
+            f"<td>{counts[Status.FAIL]}</td><td>{counts[Status.WARN]}</td>"
+            f"<td>{escape(r.platforms[0].name) if r.platforms else '&mdash;'}</td></tr>"
         )
     return (
         '<section class="card overview"><table><thead><tr><th>Target</th><th>Grade</th>'
-        "<th>Score</th><th>Failed</th><th>Warnings</th></tr></thead><tbody>"
+        "<th>Score</th><th>Failed</th><th>Warnings</th><th>Platform</th></tr></thead><tbody>"
         + "".join(rows)
         + "</tbody></table></section>"
     )
@@ -146,6 +155,19 @@ def _summary(r: ScanResult, index: int) -> str:
         )
     )
     error = f'<div class="error">Error: {escape(r.error)}</div>' if r.error else ""
+    platform = ""
+    if r.platforms:
+        evidence = ", ".join(r.platforms[0].evidence)
+        platform = (
+            f'<div class="meta" title="Evidence: {escape(evidence)}">Platform: '
+            f"<strong>{escape(describe(r.platforms))}</strong> &middot; evidence: "
+            f"{escape(evidence)}</div>"
+        )
+        if r.your_part and r.findings:
+            platform += (
+                f'<div class="yourpart"><strong>Your part:</strong> '
+                f"{escape(r.your_part.summary())}</div>"
+            )
     color = {"a": "#16794c", "b": "#5f8f00", "c": "#c27c00", "d": "#d14f00"}.get(
         grade_class, "#b42318"
     )
@@ -156,46 +178,66 @@ def _summary(r: ScanResult, index: int) -> str:
         f'<div class="score" style="color:{color}" title="Score {r.score}/100">'
         f'<div style="width:{r.score}%"></div></div>'
         f'<div class="meta">Score <strong>{r.score}</strong>/100</div>'
-        f'<div class="chips">{chips}</div>{error}</div></div>'
+        f'<div class="chips">{chips}</div>{platform}{error}</div></div>'
     )
 
 
-def _findings_table(findings: Sequence[Finding]) -> str:
+def _who(f: Finding) -> str:
+    label = RESPONSIBILITY_LABELS[f.responsibility]
+    return f'<span class="who who-{f.responsibility}">{escape(label)}</span>'
+
+
+def _findings_table(findings: Sequence[Finding], show_who: bool = False) -> str:
     rows = []
     previous = None
+    columns = 5 if show_who else 4
     for f in findings:
         if f.category != previous:
             rows.append(
-                f'<tr class="cat"><td colspan="4">{CATEGORY_LABELS[f.category.value]}</td></tr>'
+                f'<tr class="cat"><td colspan="{columns}">'
+                f"{CATEGORY_LABELS[f.category.value]}</td></tr>"
             )
             previous = f.category
         pts = f"&minus;{f.deduction}" if f.deduction else ""
+        who = f"<td>{_who(f) if needs_fix(f) else ''}</td>" if show_who else ""
         rows.append(
             f"<tr><td>{_pill(f.status)}</td><td>{escape(f.title)}</td>"
-            f'<td class="detail">{escape(f.detail)}</td><td class="pts">{pts}</td></tr>'
+            f'<td class="detail">{escape(f.detail)}</td><td class="pts">{pts}</td>{who}</tr>'
         )
+    who_head = "<th>Who fixes</th>" if show_who else ""
     return (
-        "<table><thead><tr><th>Status</th><th>Check</th><th>Details</th><th>Pts</th></tr>"
-        "</thead><tbody>" + "".join(rows) + "</tbody></table>"
+        "<table><thead><tr><th>Status</th><th>Check</th><th>Details</th><th>Pts</th>"
+        f"{who_head}</tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
     )
 
 
-def _advice(f: Finding) -> str:
+def _link(url: str) -> str:
+    return f'<a href="{escape(url)}" rel="noopener noreferrer">{escape(url)}</a>'
+
+
+def _advice(f: Finding, shown: Sequence[str] = PLATFORMS, platform_name: str = "") -> str:
     if f.advice is None:
         return ""
     parts = [f"<p>{escape(f.advice.summary)}</p>"]
+    if f.platform_steps:
+        docs = (
+            f'<br><span class="meta">Docs: {_link(f.platform_docs)}</span>'
+            if f.platform_docs
+            else ""
+        )
+        parts.append(
+            f'<div class="platform-steps"><strong>On {escape(platform_name)}</strong> '
+            f"{_who(f)}<br>{escape(f.platform_steps)}{docs}</div>"
+        )
     for platform in PLATFORMS:
         snippet = f.advice.snippets.get(platform)
-        if snippet:
+        if snippet and platform in shown:
             parts.append(
                 f'<div class="platform">{escape(PLATFORM_LABELS[platform])}</div>'
                 f"<pre><code>{escape(snippet)}</code></pre>"
             )
     if f.advice.references:
-        links = ", ".join(
-            f'<a href="{escape(u)}" rel="noopener noreferrer">{escape(u)}</a>'
-            for u in f.advice.references
-        )
+        links = ", ".join(_link(u) for u in f.advice.references)
         parts.append(f'<p class="meta">Learn more: {links}</p>')
     is_open = " open" if f.status == Status.FAIL else ""
     pts = f' <span class="meta">&minus;{f.deduction} pts</span>' if f.deduction else ""
@@ -209,10 +251,12 @@ def _advice(f: Finding) -> str:
 def _section(r: ScanResult, index: int) -> str:
     fixes = [f for f in r.findings if needs_fix(f)]
     body = [f'<section class="card" id="{_anchor(index)}">', _summary(r, index)]
+    shown = snippet_platforms(r.platforms)
+    name = r.platforms[0].name if r.platforms else ""
     if r.findings:
-        body += ["<h3>Findings</h3>", _findings_table(r.findings)]
+        body += ["<h3>Findings</h3>", _findings_table(r.findings, bool(r.platforms))]
     if fixes:
-        body += ["<h3>How to fix</h3>", *(_advice(f) for f in fixes)]
+        body += ["<h3>How to fix</h3>", *(_advice(f, shown, name) for f in fixes)]
     body.append("</section>")
     return "".join(body)
 

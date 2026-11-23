@@ -236,15 +236,23 @@ def check_content_type_options(headers: Mapping[str, str]) -> Finding:
 # --------------------------------------------------------------------------- #
 # Referrer-Policy
 # --------------------------------------------------------------------------- #
-def check_referrer_policy(headers: Mapping[str, str]) -> Finding:
+def check_referrer_policy(headers: Mapping[str, str], meta_policy: str | None = None) -> Finding:
     """Control how much of the current URL is sent to other sites.
 
     URLs often contain secrets (reset tokens, search terms, IDs). The policy
     decides whether those leak through the Referer header.
+
+    The policy can also be set in the page itself with
+    ``<meta name="referrer" content="...">``, which browsers honour just like
+    the header. That matters on site builders where you can't add headers but
+    can add HTML, so `meta_policy` (the meta tag's content) counts too.
     """
     value = _get(headers, "Referrer-Policy")
     title = "Referrer-Policy"
     fix = "Add: Referrer-Policy: strict-origin-when-cross-origin"
+    via = ""
+    if value is None and meta_policy:
+        value, via = meta_policy, " (set via <meta> tag)"
     if value is None:
         # Modern browsers default to strict-origin-when-cross-origin, so this is
         # a small deduction: you are relying on the browser's default.
@@ -263,11 +271,11 @@ def check_referrer_policy(headers: Mapping[str, str]) -> Finding:
             "referrer",
             title,
             Status.FAIL,
-            f"{effective} can leak full URLs.",
+            f"{effective} can leak full URLs{via}.",
             recommendation=fix,
             deduction=10,
         )
-    return _finding("referrer", title, Status.PASS, effective)
+    return _finding("referrer", title, Status.PASS, effective + via)
 
 
 # --------------------------------------------------------------------------- #
@@ -369,14 +377,14 @@ def check_info_leak(headers: Mapping[str, str]) -> list[Finding]:
     return findings
 
 
-def check_all(headers: Mapping[str, str]) -> list[Finding]:
+def check_all(headers: Mapping[str, str], meta_referrer: str | None = None) -> list[Finding]:
     """Run every header check and return the findings in a stable order."""
     return [
         check_hsts(headers),
         check_csp(headers),
         check_framing(headers),
         check_content_type_options(headers),
-        check_referrer_policy(headers),
+        check_referrer_policy(headers, meta_referrer),
         check_permissions_policy(headers),
         *check_info_leak(headers),
     ]

@@ -27,13 +27,27 @@ uses [Semantic Versioning](https://semver.org/).
 - **SARIF 2.1.0 export** (`--sarif PATH`, `--sarif-artifact PATH`) with
   `security-severity`, stable fingerprints and fix advice as rule help, for GitHub code
   scanning. Validated against the official OASIS schema in the tests.
+- **Hosting-platform detection** from passive signals (headers, cookie names,
+  `<meta name="generator">`, asset hosts) for Wix, Squarespace, Shopify, Webflow,
+  WordPress.com, self-hosted WordPress, GitHub Pages, Netlify, Vercel and Cloudflare, with
+  confidence and evidence. Override with `--platform <id>` or switch off with `--no-detect`.
+- **Who can fix it**: every finding is tagged *you can fix*, *partly via settings* or
+  *platform-controlled*, based on conservative per-platform capability tables with links to
+  the platforms' own docs. The grade is unchanged; a new **"Your part"** summary shows how
+  many checks you control pass and how many problems belong to the platform (terminal,
+  JSON, HTML and SARIF).
+- Platform-specific fix steps come first in the advice; server snippets are hidden on hosted
+  builders unless requested with `--platform nginx` etc.
+- `Referrer-Policy` set with `<meta name="referrer">` now counts, so site-builder users can
+  fix it without header access.
 - CSP detail mentions when only a `Content-Security-Policy-Report-Only` policy exists.
 - Findings are grouped by area (headers, cookies, CORS, content, disclosure, TLS) in all
   outputs, and the summary shows passed/warning/failed/info counts.
-- `docs/LEARNING.md`: new sections on cookies, CORS, mixed content, security.txt and
-  ASP.NET version headers, plus new practice exercises.
+- `docs/LEARNING.md`: new sections on cookies, CORS, mixed content, security.txt,
+  ASP.NET version headers and the shared-responsibility model, plus new practice exercises.
 
 ### Changed
+- `--platform` now also accepts hosting platform ids, not only snippet formats.
 - `Server` / `X-Powered-By` findings moved to the new `disclosure` category.
 - Scores now include the new checks (see the README scoring table), so some sites grade
   lower than with 0.1.x.

@@ -65,7 +65,9 @@ def _fingerprint(target_url: str, check_id: str) -> str:
 def _result(finding: Finding, scan: ScanResult, rule_index: int, artifact_uri: str) -> dict:
     url = scan.final_url or scan.target
     message = f"{url}: {finding.title}: {finding.detail}"
-    if finding.recommendation:
+    if finding.platform_steps and scan.platforms:
+        message += f" Fix on {scan.platforms[0].name}: {finding.platform_steps}"
+    elif finding.recommendation:
         message += f" Fix: {finding.recommendation}"
     return {
         "ruleId": finding.check_id,
@@ -88,6 +90,8 @@ def _result(finding: Finding, scan: ScanResult, rule_index: int, artifact_uri: s
             "grade": scan.grade,
             "deduction": finding.deduction,
             "category": finding.category.value,
+            "responsibility": finding.responsibility,
+            "platform": scan.platforms[0].platform if scan.platforms else None,
         },
     }
 
@@ -120,7 +124,14 @@ def to_sarif(results: Sequence[ScanResult], artifact_uri: str | None = None) -> 
                 "results": sarif_results,
                 "properties": {
                     "scans": [
-                        {"target": r.target, "grade": r.grade, "score": r.score, "error": r.error}
+                        {
+                            "target": r.target,
+                            "grade": r.grade,
+                            "score": r.score,
+                            "error": r.error,
+                            "platform": r.platforms[0].platform if r.platforms else None,
+                            "your_part": r.your_part.to_dict() if r.your_part else None,
+                        }
                         for r in results
                     ]
                 },

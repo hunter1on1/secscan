@@ -323,6 +323,52 @@ match the target against public CVE databases.
 - **Standards over invention**: SARIF (OASIS) for findings, RFC 9116 for security.txt,
   RFC 3339 for dates. Using standards means other tools (like GitHub) understand you.
 
+---
+
+## 15. Shared responsibility: who can fix what
+
+Cloud providers describe security as a **shared responsibility model**: the provider secures
+what it runs (data centres, servers, the platform), and the customer secures what they put
+on top (their code, content, accounts and settings). Website builders work the same way.
+
+| You run it yourself (VPS, own server) | Static hosts (Netlify, Vercel) | Site builders (Wix, Squarespace, Shopify) |
+|---------------------------------------|--------------------------------|-------------------------------------------|
+| You control headers, TLS, cookies, files | You control headers and files; the host runs TLS | The platform controls headers, TLS and cookies; you control content and some settings |
+
+So a Wix site can score D even though its owner did nothing wrong: standard Wix plans
+can't add a `Content-Security-Policy` header at all. Two tempting fixes are both wrong:
+
+- **Grading Wix sites more gently.** The grade describes what a visitor's browser actually
+  receives. An attacker doesn't care who forgot the header.
+- **Hiding platform problems.** The site's visitors are still exposed; knowing that helps
+  you choose a platform or plan, or ask the vendor for a fix.
+
+secscan keeps the grade honest and adds a second view, **"your part"**: how many of the
+checks *you* can act on pass, and how many problems belong to the platform. Each finding
+is tagged *you can fix*, *partly via settings* or *platform-controlled*.
+
+**How detection works: fingerprinting.** Platforms leave traces in every response:
+headers (`X-Wix-Request-Id`, `Server: Netlify`, `X-Vercel-Id`), cookie names
+(`_shopify_y`, `crumb`), `<meta name="generator">` tags, and the hosts their assets load
+from (`static.wixstatic.com`, `cdn.shopify.com`). Each signal has a weight; a platform is
+reported only when the weights add up, and the evidence is printed so you can check it.
+This is the same passive reconnaissance that tools like Wappalyzer and WhatWeb do, and
+attackers do too: knowing a site runs WordPress tells them which exploits to try. That's
+one more reason to hide version numbers (section 8).
+
+**A trick for builders: the `<meta>` tag.** Some policies can be set in the HTML instead
+of a header. `<meta name="referrer" content="strict-origin-when-cross-origin">` works
+exactly like the `Referrer-Policy` header, so on Wix (Custom Code), Squarespace (Code
+Injection) or Shopify (`theme.liquid`) you can fix that one yourself, and secscan
+recognises it. A CSP can also be set with `<meta http-equiv>`, but without
+`frame-ancestors` or reporting, and HSTS can't be set in HTML at all, so it isn't a full
+replacement.
+
+**Edge vs origin.** When Cloudflare (or another CDN) sits in front of a site, the browser's
+TLS connection ends at Cloudflare, not at your server. TLS versions and the HTTP-to-HTTPS
+redirect are then Cloudflare settings, while headers can come from either your server or a
+Cloudflare Transform Rule.
+
 ## Practice ideas
 
 1. Scan a few well-known sites and compare grades. Why do some big sites score low?
@@ -337,7 +383,11 @@ match the target against public CVE databases.
 6. Write a `security.txt` for your own site and check it with secscan.
 7. Run `secscan yoursite --sarif out.sarif` and open the file: find the `ruleId`,
    `level` and `security-severity` of each result.
-8. Pick an item from the README roadmap and build it, tests first.
+8. Scan a Wix, a Shopify and a Netlify site and compare their "Your part" lines. Then run
+   one with `--no-detect` and see how the advice changes.
+9. Open your browser's developer tools (Network tab) on any site and try to guess its
+   platform from the response headers alone, before secscan tells you.
+10. Pick an item from the README roadmap and build it, tests first.
 
 ## References
 

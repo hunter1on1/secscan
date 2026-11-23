@@ -11,9 +11,10 @@ from collections.abc import Sequence
 from rich.console import Console
 
 from secscan import __version__
-from secscan.advice import PLATFORMS
+from secscan.advice import PLATFORMS as SNIPPET_FORMATS
 from secscan.grading import GRADE_ORDER, meets_minimum
 from secscan.html_report import write_html
+from secscan.platforms import PLATFORMS as HOSTING_PLATFORMS
 from secscan.report import render, to_json
 from secscan.sarif import write_sarif
 from secscan.scanner import scan
@@ -44,13 +45,20 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="show how to fix each problem, with config snippets",
     )
-    output.add_argument(
+    platform = parser.add_argument_group("platform")
+    platform.add_argument(
         "--platform",
         type=_platforms,
-        default=list(PLATFORMS),
+        default=None,
         metavar="LIST",
-        help=f"limit --explain snippets to these platforms, comma separated "
-        f"({', '.join(PLATFORMS)})",
+        help="comma separated. A hosting platform "
+        f"({', '.join(HOSTING_PLATFORMS)}) overrides detection; config formats "
+        f"({', '.join(SNIPPET_FORMATS)}) choose which --explain snippets to show",
+    )
+    platform.add_argument(
+        "--no-detect",
+        action="store_true",
+        help="don't detect the hosting platform (generic advice, everything 'you can fix')",
     )
     parser.add_argument(
         "--no-tls", action="store_true", help="skip certificate and protocol checks (headers only)"
@@ -72,14 +80,30 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _platforms(value: str) -> list[str]:
+    known = [*HOSTING_PLATFORMS, *(p for p in SNIPPET_FORMATS if p not in HOSTING_PLATFORMS)]
     chosen = [p.strip().lower() for p in value.split(",") if p.strip()]
-    unknown = [p for p in chosen if p not in PLATFORMS]
+    unknown = [p for p in chosen if p not in known]
     if unknown or not chosen:
         raise argparse.ArgumentTypeError(
-            f"unknown platform(s) {', '.join(unknown) or value!r}; "
-            f"choose from {', '.join(PLATFORMS)}"
+            f"unknown platform(s) {', '.join(unknown) or value!r}; choose from {', '.join(known)}"
         )
+    hosting = [p for p in chosen if p in HOSTING_PLATFORMS]
+    if len(hosting) > 1:
+        raise argparse.ArgumentTypeError(f"choose one hosting platform, not {', '.join(hosting)}")
     return chosen
+
+
+def split_platforms(chosen: Sequence[str] | None) -> tuple[str | None, list[str] | None]:
+    """Split --platform values into (hosting override, snippet formats).
+
+    "netlify", "vercel" and "cloudflare" are both a host and a config format,
+    so they count as both.
+    """
+    if not chosen:
+        return None, None
+    hosting = next((p for p in chosen if p in HOSTING_PLATFORMS), None)
+    snippets = [p for p in chosen if p in SNIPPET_FORMATS]
+    return hosting, snippets or None
 
 
 def read_targets(path: str) -> list[str]:
@@ -110,24 +134,32 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     console = Console()
     tls_probe = None if args.no_tls else probe_tls
+    hosting, snippets = split_platforms(args.platform)
+
+    def run(target: str):
+        return scan(
+            target,
+            timeout=args.timeout,
+            tls_probe=tls_probe,
+            ca_bundle=args.ca_bundle,
+            platform=hosting,
+            detect=not args.no_detect,
+        )
+
     results = []
     for target in targets:
         if args.json:
-            result = scan(
-                target, timeout=args.timeout, tls_probe=tls_probe, ca_bundle=args.ca_bundle
-            )
+            result = run(target)
         else:
             # Show a spinner while the network calls run.
             with console.status(f"Scanning {target}..."):
-                result = scan(
-                    target, timeout=args.timeout, tls_probe=tls_probe, ca_bundle=args.ca_bundle
-                )
+                result = run(target)
             render(
                 result,
                 console,
                 verbose=not args.quiet,
                 explain=args.explain,
-                platforms=args.platform,
+                platforms=snippets,
             )
         results.append(result)
 

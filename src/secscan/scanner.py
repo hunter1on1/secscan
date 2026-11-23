@@ -24,6 +24,14 @@ from secscan.grading import grade_for, score_findings
 from secscan.headers import check_all
 from secscan.mixedcontent import check_mixed_content
 from secscan.models import Category, Finding, ScanResult, Status, TLSInfo
+from secscan.platforms import (
+    Detection,
+    detect_platforms,
+    detection_for,
+    extract_meta,
+    tag_findings,
+    your_part,
+)
 from secscan.securitytxt import PATH as SECURITY_TXT_PATH
 from secscan.securitytxt import check_security_txt
 from secscan.tls import create_verified_context, evaluate_tls, probe_tls
@@ -152,6 +160,8 @@ def scan(
     tls_probe: TLSProbe | None = probe_tls,
     timeout: float = 10.0,
     ca_bundle: str | None = None,
+    platform: str | None = None,
+    detect: bool = True,
 ) -> ScanResult:
     """Scan one target and return a graded :class:`ScanResult`.
 
@@ -159,8 +169,13 @@ def scan(
     whole pipeline without touching the network. Pass ``tls_probe=None`` to
     skip the TLS checks. `ca_bundle` overrides the trusted CA file (default:
     SSL_CERT_FILE if set, otherwise certifi's bundle).
+
+    `platform` forces a hosting platform id (see platforms.PLATFORMS) instead
+    of detecting it; ``detect=False`` skips detection entirely.
     """
     result = ScanResult(target=target)
+    if platform is not None:
+        result.platforms = [detection_for(platform)]
     try:
         url, host, port = normalize_target(target)
     except TargetError as exc:
@@ -194,7 +209,10 @@ def scan(
                         deduction=20,
                     )
                 )
-            result.findings.extend(check_all(response.headers))
+            is_html = "html" in response.headers.get("content-type", "").lower()
+            html = response.text if is_html else ""
+            meta, _ = extract_meta(html) if html else ({}, set())
+            result.findings.extend(check_all(response.headers, meta.get("referrer")))
 
             # Cookies may be set on any hop of a redirect chain, not just the
             # final page, so collect Set-Cookie from every response.
@@ -203,6 +221,10 @@ def scan(
                 for r in (*response.history, response)
                 for value in r.headers.get_list("set-cookie")
             ]
+            if platform is None and detect:
+                result.platforms = detect_platforms(
+                    response.url.host, response.headers, set_cookies, html
+                )
             result.findings.extend(check_cookies(set_cookies))
             result.findings.append(check_cors_policy(client, result.final_url))
             result.findings.append(check_page_content(response))
@@ -226,6 +248,9 @@ def scan(
     # category is preserved) and attach fix advice to WARN/FAIL findings.
     result.findings.sort(key=lambda f: CATEGORY_ORDER.index(f.category))
     attach_advice(result.findings)
+    detections: list[Detection] = result.platforms
+    tag_findings(result.findings, detections)
+    result.your_part = your_part(result.findings, detections)
 
     result.score = score_findings(result.findings)
     result.grade = grade_for(result.score, result.findings)

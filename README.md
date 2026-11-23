@@ -8,9 +8,11 @@
 **secscan** is a command-line tool that audits a website's **security headers, cookies,
 CORS policy, mixed content, `security.txt` and TLS configuration**. It explains every
 finding in plain language, gives copy-paste fixes for Nginx, Apache, Cloudflare, Netlify
-and Vercel, and sums it all up as a letter grade from **A+** to **F**. Results can be
-exported as **JSON**, a self-contained **HTML report**, or **SARIF** for GitHub code
-scanning.
+and Vercel, and sums it all up as a letter grade from **A+** to **F**. It also **detects the
+hosting platform** (Wix, Squarespace, Shopify, Webflow, WordPress, GitHub Pages, Netlify,
+Vercel, Cloudflare) and tells you which problems are **yours to fix** and which only the
+platform can change. Results can be exported as **JSON**, a self-contained **HTML report**,
+or **SARIF** for GitHub code scanning.
 
 ```console
 $ secscan https://example.com --explain --html report.html
@@ -73,6 +75,8 @@ secscan example.com github.com           # several sites
 secscan --file targets.txt               # one URL per line, '#' starts a comment
 secscan example.com --explain            # how to fix each problem, with config snippets
 secscan example.com --explain --platform nginx,cloudflare   # only these snippets
+secscan mysite.com --platform wix        # skip detection: treat the site as Wix
+secscan mysite.com --no-detect           # generic advice, no platform detection
 secscan example.com --json > report.json # machine-readable output
 secscan example.com --html report.html   # shareable, self-contained HTML report
 secscan example.com --sarif secscan.sarif  # SARIF 2.1.0 for GitHub code scanning
@@ -85,7 +89,8 @@ secscan intranet.local --ca-bundle corp-ca.pem  # trust a custom/internal CA
 |--------|-------------|
 | `-f, --file PATH` | Read targets from a file |
 | `--explain` | Show a fix panel for every warning/failure, with config snippets |
-| `--platform LIST` | Limit `--explain` snippets to `nginx`, `apache`, `cloudflare`, `netlify`, `vercel`, `app` |
+| `--platform LIST` | Comma separated. A hosting platform (`wix`, `squarespace`, `shopify`, `webflow`, `wordpress-com`, `wordpress`, `github-pages`, `netlify`, `vercel`, `cloudflare`) overrides detection; a config format (`nginx`, `apache`, `cloudflare`, `netlify`, `vercel`, `app`) chooses which `--explain` snippets to show |
+| `--no-detect` | Don't detect the hosting platform; every finding is treated as "you can fix" |
 | `--json` | Print results as JSON to stdout (includes the fix advice) |
 | `--html PATH` | Write a self-contained HTML report (inline CSS, no scripts, works offline) |
 | `--sarif PATH` | Write SARIF 2.1.0 |
@@ -111,6 +116,72 @@ To trust a different set of roots (a corporate proxy or an internal CA), pass
 `--ca-bundle PATH` or set `SSL_CERT_FILE`. Priority: `--ca-bundle` > `SSL_CERT_FILE` > certifi.
 If a certificate fails with *unable to get local issuer certificate*, secscan adds a hint
 that the problem may be the local trust store rather than the site.
+
+### Hosted platforms and "your part"
+
+A site built with Wix or Squarespace can't send a `Content-Security-Policy` header no matter
+how careful its owner is, because the platform runs the servers. secscan keeps the grade
+honest (a visitor's browser doesn't care who hosts the site), but it also tells you **who can
+fix each problem**:
+
+| Tag | Meaning |
+|-----|---------|
+| **you can fix** | Your own code, content or server config |
+| **partly via settings** | A platform setting, a plan upgrade, or HTML you can inject (e.g. a `<meta>` tag) |
+| **platform-controlled** | Only the platform can change it |
+
+The platform is detected from the response you already fetched (headers such as
+`X-Wix-Request-Id` or `Server: Netlify`, cookie names, `<meta name="generator">`, asset
+hosts), and the evidence is shown so you can judge it. Fix advice then starts with the
+platform's own steps and docs link, and server snippets (Nginx/Apache) are hidden on hosted
+builders, where there is no server config to edit. Ask for them with `--platform nginx`.
+If detection is wrong, set the platform with `--platform wix` (or turn it off with
+`--no-detect`).
+
+Illustrative output for a Wix-hosted site (`example.com` stands in for the real domain):
+
+```text
+╭─ Grade  D   score 45/100 ────────────────────────────────────────────────────╮
+│ https://example.com                                                          │
+│ Final URL: https://example.com/ (HTTP 200)                                   │
+│ TLS: TLSv1.3                                                                 │
+│ 10 passed · 3 warnings · 3 failed · 3 info                                   │
+│ Platform: Wix (high confidence) behind Cloudflare                            │
+│   evidence: X-Wix-Request-Id header, generator "Wix.com Website Builder",    │
+│ ssr-caching cookie, assets from static.wixstatic.com /                       │
+│ static.parastorage.com                                                       │
+│ Your part: 1 of 2 checks you control pass · 5 issues controlled by Wix       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+...
+Recommendations  (run with --explain for details)
+  • Content-Security-Policy: On Wix (platform-controlled): Not available on
+standard Wix plans; Wix Studio for Enterprise can set a CSP under Security
+Headers.
+  • Referrer-Policy: On Wix (partly via settings): Add <meta name="referrer"
+content="strict-origin-when-cross-origin"> in the head via Settings > Custom
+Code (site must be published with a connected domain). secscan recognises the
+meta tag.
+  • security.txt: On Wix (platform-controlled): Wix doesn't serve your own files
+such as security.txt (Wix documents that they are ignored), so this can't be
+fixed on Wix today.
+```
+
+What each platform lets you control, as documented by the platforms themselves (secscan
+links the relevant docs page in every fix):
+
+| Platform | Security headers | `security.txt` | TLS / HTTPS redirect |
+|----------|------------------|----------------|----------------------|
+| Wix | Platform-controlled (Wix Studio Enterprise only); `Referrer-Policy` via a `<meta>` tag in Custom Code | Platform-controlled | Platform |
+| Squarespace | Platform-controlled; HSTS via the *HSTS Secure* setting; `Referrer-Policy` via Code Injection | Platform-controlled | HTTPS setting |
+| Shopify | Platform-controlled on Liquid themes (Hydrogen can set them); `Referrer-Policy` via `theme.liquid` | Platform-controlled | Platform |
+| Webflow | Custom headers on Enterprise; secure frame headers and HSTS options in publishing settings | Check docs | Platform |
+| WordPress.com | Redirection plugin or `custom-redirects.php` (plans with plugins) | SFTP upload | Platform |
+| GitHub Pages | Platform-controlled (`_headers` is ignored); `Referrer-Policy` via `<meta>` | You (commit `.well-known/`) | *Enforce HTTPS* setting |
+| Netlify / Vercel | You (`_headers` / `vercel.json`) | You | Platform |
+| Self-hosted / Cloudflare | You (server config or Transform Rules) | You | You / Cloudflare settings |
+
+The capability table is conservative: when a platform's docs don't say something is
+possible, secscan says "check the platform docs" instead of guessing.
 
 ### Sample output
 
@@ -167,7 +238,7 @@ A real scan of `https://github.com` (run on 2026-11-22):
 │ PASS   │ TLSv1.1 disabled          │ Refused                           │     │
 │ PASS   │ TLSv1.3 supported         │ Accepted                          │     │
 └────────┴───────────────────────────┴───────────────────────────────────┴─────┘
-Recommendations  (run with --explain for config)
+Recommendations  (run with --explain for details)
   • Permissions-Policy: Add e.g.: Permissions-Policy: camera=(), microphone=(), 
 geolocation=()
 ```
@@ -265,6 +336,9 @@ jobs:
         "recommendation": "Load every resource over https:// (or add CSP upgrade-insecure-requests).",
         "deduction": 5,
         "critical": false,
+        "responsibility": "you",
+        "platform_steps": "",
+        "platform_docs": "",
         "advice": {
           "summary": "Change every http:// resource URL to https:// ...",
           "snippets": { "nginx": "...", "apache": "...", "cloudflare": "..." },
@@ -272,12 +346,16 @@ jobs:
         }
       }
     ],
+    "platforms": [],
+    "primary_platform": null,
     "tls": { "negotiated_version": "TLSv1.2", "certificate": { "issuer": "Let's Encrypt" } }
   }
 ]
 ```
 
-(shortened)
+(shortened) Each result also has a `your_part` object (`controllable`, `controllable_passed`,
+`open_you`, `open_settings`, `platform_issues`), and each entry in `platforms` lists the
+platform id, kind, confidence and evidence.
 
 ## How grading works
 
@@ -359,6 +437,7 @@ src/secscan/
 ├── securitytxt.py   # pure: security.txt response -> finding (RFC 9116)
 ├── tls.py           # TLS probing (network) + evaluation (pure)
 ├── advice.py        # catalogue of every check: severity + fix snippets
+├── platforms.py     # hosting-platform detection + who-can-fix-what tables
 ├── grading.py       # score and letter grade
 ├── report.py        # terminal output (rich) and JSON
 ├── html_report.py   # self-contained HTML report
@@ -386,6 +465,7 @@ CI runs lint and tests on Python 3.10 to 3.13 for every push and pull request.
 
 - [x] Cookie flags, CORS, mixed content, `security.txt`, version disclosure (v0.2.0)
 - [x] Fix advice with platform snippets, HTML and SARIF reports (v0.2.0)
+- [x] Hosting-platform detection and "your part" summary (v0.2.0)
 - [ ] Publish to PyPI and a Docker image
 - [ ] Reusable GitHub Action (`uses: hunter1on1/secscan@v1`)
 - [ ] HSTS preload list status

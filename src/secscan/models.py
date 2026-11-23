@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from enum import Enum
+from typing import Any
 
 
 class Status(str, Enum):
@@ -54,6 +55,10 @@ class Finding:
     deduction: int = 0  # points removed from the 100-point score
     critical: bool = False  # a critical finding caps the grade at F
     advice: Advice | None = None  # attached to WARN/FAIL findings, see advice.py
+    # Who can fix it: "you", "settings" or "platform" (see platforms.py).
+    responsibility: str = "you"
+    platform_steps: str = ""  # platform-specific fix steps, if a platform was detected
+    platform_docs: str = ""  # link to the platform's documentation for those steps
 
     def to_dict(self) -> dict:
         data = asdict(self)
@@ -94,6 +99,14 @@ class ScanResult:
     findings: list[Finding] = field(default_factory=list)
     tls: TLSInfo | None = None
     error: str = ""
+    # Filled in by platforms.py: detected hosting platforms (primary first)
+    # and the "your part" summary. Typed loosely to avoid an import cycle.
+    platforms: list[Any] = field(default_factory=list)
+    your_part: Any = None
+
+    @property
+    def primary_platform(self) -> Any:
+        return self.platforms[0] if self.platforms else None
 
     def to_dict(self) -> dict:
         return {
@@ -103,6 +116,9 @@ class ScanResult:
             "score": self.score,
             "grade": self.grade,
             "error": self.error,
+            "platforms": [p.to_dict() for p in self.platforms],
+            "primary_platform": self.platforms[0].platform if self.platforms else None,
+            "your_part": self.your_part.to_dict() if self.your_part else None,
             "tls": asdict(self.tls) if self.tls else None,
             "findings": [f.to_dict() for f in self.findings],
         }

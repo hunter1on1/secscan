@@ -16,6 +16,7 @@ from rich.text import Text
 
 from secscan.advice import PLATFORM_LABELS, PLATFORMS
 from secscan.models import Finding, ScanResult, Status
+from secscan.platforms import RESPONSIBILITY_LABELS, describe, snippet_platforms
 
 STATUS_STYLE = {
     Status.PASS: ("PASS", "bold green"),
@@ -40,6 +41,13 @@ CATEGORY_LABELS = {
     "content": "Content",
     "disclosure": "Disclosure",
     "tls": "TLS",
+}
+
+# Who-can-fix labels, short enough for the table.
+WHO_STYLE = {
+    "you": ("you", "green"),
+    "settings": ("settings", "yellow"),
+    "platform": ("platform", "magenta"),
 }
 
 # Pygments lexer used to colour each platform's snippet.
@@ -74,6 +82,12 @@ def _summary_panel(result: ScanResult) -> Panel:
             f"[red]{counts[Status.FAIL]} failed[/red] · "
             f"[cyan]{counts[Status.INFO]} info[/cyan]"
         )
+    if result.platforms:
+        primary = result.platforms[0]
+        lines.append(f"Platform: {describe(result.platforms)}")
+        lines.append(f"[dim]  evidence: {', '.join(primary.evidence)}[/dim]")
+    if result.your_part and result.platforms and result.findings:
+        lines.append(f"[bold]Your part:[/bold] {result.your_part.summary()}")
     if result.error:
         lines.append(f"[red]Error: {result.error}[/red]")
     return Panel("\n".join(lines), title=title, title_align="left", expand=False)
@@ -85,6 +99,10 @@ def _findings_table(result: ScanResult) -> Table:
     table.add_column("Check")
     table.add_column("Details")
     table.add_column("Pts", justify="right")
+    # "Who fixes it" only means something once a platform is known.
+    show_who = bool(result.platforms)
+    if show_who:
+        table.add_column("Who")
     previous = None
     for f in result.findings:
         if f.category != previous:
@@ -93,22 +111,37 @@ def _findings_table(result: ScanResult) -> Table:
             # A label row per category keeps the table narrow enough for
             # an 80-column terminal.
             label = CATEGORY_LABELS[f.category.value].upper()
-            table.add_row("", Text(label, style="bold magenta"), "", "")
+            table.add_row("", Text(label, style="bold magenta"), "", "", *([""] * show_who))
             previous = f.category
         status, style = STATUS_STYLE[f.status]
-        table.add_row(
+        row = [
             Text(status, style=style),
             f.title,
             f.detail,
             f"-{f.deduction}" if f.deduction else "",
-        )
+        ]
+        if show_who:
+            who, who_style = WHO_STYLE[f.responsibility]
+            row.append(Text(who, style=who_style) if needs_fix(f) else "")
+        table.add_row(*row)
     return table
 
 
-def _advice_panel(finding: Finding, platforms: Sequence[str]) -> Panel:
+def platform_line(finding: Finding, platform_name: str) -> str:
+    """'On Wix (platform-controlled): ...' for recommendations."""
+    label = RESPONSIBILITY_LABELS[finding.responsibility]
+    return f"On {platform_name} ({label}): {finding.platform_steps}"
+
+
+def _advice_panel(finding: Finding, platforms: Sequence[str], platform_name: str = "") -> Panel:
     advice = finding.advice
     assert advice is not None
     parts: list = [Text(advice.summary)]
+    if finding.platform_steps:
+        # Platform-specific steps come first: they are what you can actually do.
+        parts.append(Text(f"\n{platform_line(finding, platform_name)}", style="bold"))
+        if finding.platform_docs:
+            parts.append(Text(f"Docs: {finding.platform_docs}", style="dim"))
     for platform in PLATFORMS:
         snippet = advice.snippets.get(platform)
         if snippet is None or platform not in platforms:
@@ -135,14 +168,19 @@ def render(
     console: Console,
     verbose: bool = True,
     explain: bool = False,
-    platforms: Sequence[str] = PLATFORMS,
+    platforms: Sequence[str] | None = None,
 ) -> None:
     """Print one result.
 
     * default: summary, findings table, one-line recommendations
     * ``explain``: a panel per problem with copy-paste config snippets
     * ``verbose=False`` (``--quiet``): no recommendations at all
+
+    `platforms` lists the snippet formats to show (nginx, apache, ...). By
+    default they are chosen from the detected hosting platform.
     """
+    shown = snippet_platforms(result.platforms, platforms)
+    platform_name = result.platforms[0].name if result.platforms else ""
     console.print(_summary_panel(result))
     if not result.findings:
         console.print()
@@ -152,11 +190,22 @@ def render(
     fixes = [f for f in result.findings if needs_fix(f)]
     if explain and fixes:
         console.print("[bold]How to fix[/bold]")
+        if not shown:
+            console.print(
+                f"[dim]Server config snippets are hidden because {platform_name} manages the "
+                "servers; add --platform nginx (or apache, cloudflare, ...) to show them.[/dim]"
+            )
         for f in fixes:
             if f.advice:
-                console.print(_advice_panel(f, platforms))
+                console.print(_advice_panel(f, shown, platform_name))
     elif verbose and fixes:
-        console.print("[bold]Recommendations[/bold]  [dim](run with --explain for config)[/dim]")
+        console.print("[bold]Recommendations[/bold]  [dim](run with --explain for details)[/dim]")
         for f in fixes:
-            console.print(f"  • [bold]{f.title}[/bold]: {f.recommendation}")
+            if f.platform_steps:
+                console.print(
+                    f"  • [bold]{f.title}[/bold]: {platform_line(f, platform_name)}",
+                    highlight=False,
+                )
+            else:
+                console.print(f"  • [bold]{f.title}[/bold]: {f.recommendation}")
     console.print()

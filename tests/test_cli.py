@@ -124,3 +124,23 @@ def test_default_output_is_concise(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "Recommendations" in out and "--explain" in out
     assert "add_header" not in out
+
+
+def test_platform_option_splits_hosting_and_snippets(fake_scan):
+    cli.main(["good.example", "--json", "--platform", "wix,nginx"])
+    assert fake_scan[-1][1]["platform"] == "wix"
+    assert cli.split_platforms(["wix", "nginx"]) == ("wix", ["nginx"])
+    assert cli.split_platforms(["netlify"]) == ("netlify", ["netlify"])
+    assert cli.split_platforms(["apache"]) == (None, ["apache"])
+    assert cli.split_platforms(None) == (None, None)
+
+
+def test_only_one_hosting_platform(capsys):
+    with pytest.raises(SystemExit):
+        cli.main(["good.example", "--platform", "wix,shopify"])
+    assert "one hosting platform" in capsys.readouterr().err
+
+
+def test_no_detect_flag(fake_scan):
+    cli.main(["good.example", "--json", "--no-detect"])
+    assert fake_scan[-1][1]["detect"] is False
