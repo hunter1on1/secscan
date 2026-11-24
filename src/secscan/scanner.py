@@ -20,7 +20,7 @@ from secscan import __version__
 from secscan.advice import attach_advice
 from secscan.cookies import check_cookies
 from secscan.cors import PROBE_ORIGIN, check_cors
-from secscan.grading import grade_for, score_findings
+from secscan.grading import grade_for, score_compliance, score_findings
 from secscan.headers import check_all
 from secscan.mixedcontent import check_mixed_content
 from secscan.models import Category, Finding, ScanResult, Status, TLSInfo
@@ -32,6 +32,7 @@ from secscan.platforms import (
     tag_findings,
     your_part,
 )
+from secscan.restaurant import Compliance, check_restaurant
 from secscan.securitytxt import PATH as SECURITY_TXT_PATH
 from secscan.securitytxt import check_security_txt
 from secscan.tls import create_verified_context, evaluate_tls, probe_tls
@@ -46,6 +47,7 @@ CATEGORY_ORDER = [
     Category.CONTENT,
     Category.DISCLOSURE,
     Category.TLS,
+    Category.RESTAURANT,
 ]
 
 # Called as probe(host, port, timeout, ca_bundle=...); see tls.probe_tls.
@@ -162,6 +164,7 @@ def scan(
     ca_bundle: str | None = None,
     platform: str | None = None,
     detect: bool = True,
+    profile: str | None = None,
 ) -> ScanResult:
     """Scan one target and return a graded :class:`ScanResult`.
 
@@ -172,8 +175,11 @@ def scan(
 
     `platform` forces a hosting platform id (see platforms.PLATFORMS) instead
     of detecting it; ``detect=False`` skips detection entirely.
+
+    ``profile="restaurant"`` adds privacy and booking checks and a separate
+    compliance score; the security grade is unchanged.
     """
-    result = ScanResult(target=target)
+    result = ScanResult(target=target, profile=profile)
     if platform is not None:
         result.platforms = [detection_for(platform)]
     try:
@@ -229,6 +235,10 @@ def scan(
             result.findings.append(check_cors_policy(client, result.final_url))
             result.findings.append(check_page_content(response))
             result.findings.append(fetch_security_txt(client, result.final_url))
+            if profile == "restaurant" and html:
+                result.findings.extend(
+                    check_restaurant(result.final_url, html, set_cookies, client=client)
+                )
         except httpx.HTTPError as exc:
             result.error = f"HTTPS request failed: {exc}"
 
@@ -254,6 +264,10 @@ def scan(
 
     result.score = score_findings(result.findings)
     result.grade = grade_for(result.score, result.findings)
+    if profile == "restaurant":
+        result.compliance = Compliance.from_findings(
+            result.findings, score_compliance(result.findings), grade_for
+        )
     if result.error and not result.status_code:
         # We could not read any headers, so a score would be misleading.
         result.score = 0

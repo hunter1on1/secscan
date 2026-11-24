@@ -369,6 +369,36 @@ TLS connection ends at Cloudflare, not at your server. TLS versions and the HTTP
 redirect are then Cloudflare settings, while headers can come from either your server or a
 Cloudflare Transform Rule.
 
+---
+
+## 16. Cookie consent and GDPR basics
+
+In the EU, a website generally needs a lawful basis to use cookies that are not strictly
+necessary (analytics, advertising, most "remember this offer" tags). For those cookies the
+lawful basis is almost always **consent**, and consent has to be:
+
+- **Freely given**: a "reject" option as easy as "accept"; no pre-ticked boxes.
+- **Informed**: people are told what you use and why, in a language they understand.
+- **Specific**: analytics is not the same as ads.
+- **Before** the cookie is set. Loading Google Analytics or a Meta Pixel on the first
+  paint, then showing a banner, is the wrong order.
+
+A **consent management platform** (CMP) such as iubenda (very common on Italian sites),
+Cookiebot, OneTrust, Complianz, CookieYes or Usercentrics shows the banner and, if it is
+set up correctly, holds those scripts back until the visitor agrees. Site builders often
+have a built-in banner (Wix uses Usercentrics; Squarespace has a Cookies and Data Privacy
+setting).
+
+secscan can only see the **first** HTML response and its cookies. If it finds a known
+tracker and no known banner, it says the trackers are *likely* loading before consent. If
+it finds both, it does not pretend to know the load order. Either way, **this is not
+legal advice**: a lawyer should review a real compliance question.
+
+A privacy policy (informativa sulla privacy) is the document that explains what you
+collect and why. It should be one click from the homepage, usually in the footer, and
+linked from the banner and from any form that asks for an email address. Italian
+businesses are also generally required to show their **Partita IVA** on the site.
+
 ## Practice ideas
 
 1. Scan a few well-known sites and compare grades. Why do some big sites score low?
@@ -387,7 +417,8 @@ Cloudflare Transform Rule.
    one with `--no-detect` and see how the advice changes.
 9. Open your browser's developer tools (Network tab) on any site and try to guess its
    platform from the response headers alone, before secscan tells you.
-10. Pick a check secscan doesn't do yet (for example Subresource Integrity on third-party
+10. Run `secscan example.com --profile restaurant` and read the compliance section. Then view the page source and try to spot a consent banner or an analytics script yourself.
+11. Pick a check secscan doesn't do yet (for example Subresource Integrity on third-party
     scripts) and build it, tests first.
 
 ## References
@@ -399,4 +430,5 @@ Cloudflare Transform Rule.
   RFC 6265bis (cookies), RFC 9116 (security.txt)
 - PortSwigger Web Security Academy (free labs on CORS, CSRF, XSS, clickjacking):
   https://portswigger.net/web-security
+- GDPR cookies (plain-language overview): https://gdpr.eu/cookies/
 - SARIF 2.1.0 specification: https://docs.oasis-open.org/sarif/sarif/v2.1.0/

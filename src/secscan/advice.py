@@ -410,6 +410,86 @@ _rule(
     ["https://developer.mozilla.org/docs/Web/Security/Mixed_content"],
 )
 
+_GDPR = "https://gdpr.eu/cookies/"
+_NOT_LEGAL = " This is not legal advice."
+
+_rule(
+    "cookie-consent",
+    "Cookie consent banner",
+    "A consent banner should appear before analytics or advertising cookies are set, "
+    "for visitors in the EU.",
+    5.0,
+    "Add a cookie consent banner and block analytics and ads until the visitor agrees."
+    + _NOT_LEGAL,
+    {"app": "Add a consent banner and hold analytics/ads back until the visitor agrees."},
+    [_GDPR],
+)
+_rule(
+    "privacy-policy",
+    "Privacy / cookie policy",
+    "Visitors should be able to open a privacy policy (and a cookie policy, if you use "
+    "cookies) from the homepage.",
+    4.0,
+    "Publish a privacy policy and link it in the footer, in the language of your guests. "
+    "A lawyer or your platform's template can help you write it." + _NOT_LEGAL,
+    {"app": "Publish a privacy policy and link it in the footer."},
+    [_GDPR],
+)
+_rule(
+    "vat-number",
+    "VAT / Partita IVA",
+    "Italian businesses are generally required to show their Partita IVA on the website.",
+    2.0,
+    "Add the Partita IVA (and the legal name / registered office) in the footer, next to "
+    "the other legal links." + _NOT_LEGAL,
+    {"app": "Add the Partita IVA and legal name in the footer."},
+)
+_rule(
+    "form-https",
+    "Form transport",
+    "Forms that post over plain HTTP can leak names, emails, bookings or passwords.",
+    8.0,
+    "Serve the site over HTTPS and point every form action at an https:// URL. A blank or "
+    "relative action on an HTTPS page is fine.",
+    {"app": "Use https:// for every form action (a relative action on an HTTPS page is fine)."},
+    ["https://developer.mozilla.org/docs/Web/Security/Mixed_content"],
+)
+_rule(
+    "form-consent",
+    "Form privacy notice",
+    "Forms that collect an email address should mention why and link to the privacy policy.",
+    2.0,
+    "Add a short note and a privacy-policy link next to the email field, and only use the "
+    "address for the purpose you describe." + _NOT_LEGAL,
+    {"app": "Add a short privacy note and a link next to the email field."},
+)
+_rule(
+    "booking-widgets",
+    "Booking and ordering widgets",
+    "Third-party booking or delivery widgets should load over HTTPS, from the official embed.",
+    6.0,
+    "Use the official https:// embed from your booking or delivery partner. If you load a "
+    "script from an unexpected host, switch back to the official snippet (and add Subresource "
+    "Integrity if the vendor publishes a hash).",
+    {"app": "Use the official https:// embed from your booking or delivery partner."},
+)
+_rule(
+    "contact-links",
+    "Contact links",
+    "Telephone and email links on a restaurant homepage are expected and useful.",
+    1.0,
+    "No change needed; telephone and email links are normal for a restaurant.",
+    {"app": "# No change needed."},
+)
+_rule(
+    "google-maps",
+    "Google Maps embed",
+    "A maps embed should be loaded over HTTPS.",
+    3.0,
+    "Use the official https://www.google.com/maps/embed URL from Google Maps > Share > Embed.",
+    {"app": "Use the official HTTPS embed from Google Maps > Share > Embed."},
+)
+
 
 def advice_for(check_id: str) -> Advice | None:
     rule = RULES.get(check_id)

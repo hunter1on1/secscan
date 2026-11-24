@@ -14,6 +14,8 @@ ALL_KNOWN_CHECK_IDS = {
     "aspnet-version", "aspnetmvc-version", "https-redirect", "tls", "certificate", "hostname",
     "https-downgrade", "proto-TLSv1.0", "proto-TLSv1.1", "proto-TLSv1.3", "cookie-secure",
     "cookie-httponly", "cookie-samesite", "security-txt", "cors", "mixed-content",
+    "cookie-consent", "privacy-policy", "vat-number", "form-https", "form-consent",
+    "booking-widgets", "contact-links", "google-maps",
 }  # fmt: skip
 
 

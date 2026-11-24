@@ -116,20 +116,31 @@ def _anchor(index: int) -> str:
 
 
 def _overview(results: Sequence[ScanResult]) -> str:
+    show_compliance = any(r.compliance for r in results)
     rows = []
     for i, r in enumerate(results):
         counts = {s: sum(f.status == s for f in r.findings) for s in Status}
+        extra = ""
+        if show_compliance:
+            if r.compliance:
+                extra = (
+                    f"<td><strong>{escape(r.compliance.grade)}</strong> "
+                    f"{r.compliance.score}/100</td>"
+                )
+            else:
+                extra = "<td>&mdash;</td>"
         rows.append(
             f'<tr><td><a href="#{_anchor(i)}">{escape(r.target)}</a></td>'
             f"<td><strong>{escape(r.grade)}</strong></td><td>{r.score}/100</td>"
             f"<td>{counts[Status.FAIL]}</td><td>{counts[Status.WARN]}</td>"
-            f"<td>{escape(r.platforms[0].name) if r.platforms else '&mdash;'}</td></tr>"
+            f"<td>{escape(r.platforms[0].name) if r.platforms else '&mdash;'}</td>"
+            f"{extra}</tr>"
         )
+    compliance_head = "<th>Compliance</th>" if show_compliance else ""
     return (
         '<section class="card overview"><table><thead><tr><th>Target</th><th>Grade</th>'
-        "<th>Score</th><th>Failed</th><th>Warnings</th><th>Platform</th></tr></thead><tbody>"
-        + "".join(rows)
-        + "</tbody></table></section>"
+        "<th>Score</th><th>Failed</th><th>Warnings</th><th>Platform</th>"
+        f"{compliance_head}</tr></thead><tbody>" + "".join(rows) + "</tbody></table></section>"
     )
 
 
@@ -168,6 +179,12 @@ def _summary(r: ScanResult, index: int) -> str:
                 f'<div class="yourpart"><strong>Your part:</strong> '
                 f"{escape(r.your_part.summary())}</div>"
             )
+    if r.compliance:
+        platform += (
+            f'<div class="yourpart"><strong>Compliance:</strong> '
+            f"{escape(r.compliance.summary())} "
+            f'<span class="meta">(restaurant profile; not legal advice)</span></div>'
+        )
     color = {"a": "#16794c", "b": "#5f8f00", "c": "#c27c00", "d": "#d14f00"}.get(
         grade_class, "#b42318"
     )

@@ -19,6 +19,8 @@ you how to fix each problem.
 - **Version leaks**: `Server`, `X-Powered-By` and ASP.NET headers that reveal versions
 - **Platform detection**: recognises Wix, Squarespace, Shopify, Webflow, WordPress, GitHub
   Pages, Netlify, Vercel and Cloudflare, and marks which problems only the platform can fix
+- **Restaurant profile** (`--profile restaurant`): cookie consent, privacy policy, forms and
+  booking widgets, with a separate compliance score (the security grade does not change)
 
 ## Example
 
@@ -58,6 +60,7 @@ secscan example.com --html report.html     # shareable HTML report
 secscan example.com --sarif secscan.sarif  # findings for GitHub code scanning
 secscan example.com --json                 # machine-readable output
 secscan example.com --min-grade B          # exit code 1 below B (for CI)
+secscan example.com --profile restaurant   # extra privacy and booking checks
 ```
 
 All options, output formats and the GitHub Actions example are in

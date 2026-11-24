@@ -41,6 +41,7 @@ CATEGORY_LABELS = {
     "content": "Content",
     "disclosure": "Disclosure",
     "tls": "TLS",
+    "restaurant": "Restaurant & privacy compliance",
 }
 
 # Who-can-fix labels, short enough for the table.
@@ -88,6 +89,11 @@ def _summary_panel(result: ScanResult) -> Panel:
         lines.append(f"[dim]  evidence: {', '.join(primary.evidence)}[/dim]")
     if result.your_part and result.platforms and result.findings:
         lines.append(f"[bold]Your part:[/bold] {result.your_part.summary()}")
+    if result.compliance:
+        lines.append(
+            f"[bold]Compliance:[/bold] {result.compliance.summary()}  "
+            f"[dim](restaurant profile; not legal advice)[/dim]"
+        )
     if result.error:
         lines.append(f"[red]Error: {result.error}[/red]")
     return Panel("\n".join(lines), title=title, title_align="left", expand=False)

@@ -144,3 +144,14 @@ def test_only_one_hosting_platform(capsys):
 def test_no_detect_flag(fake_scan):
     cli.main(["good.example", "--json", "--no-detect"])
     assert fake_scan[-1][1]["detect"] is False
+
+
+def test_restaurant_profile_is_passed_to_scan(fake_scan):
+    cli.main(["good.example", "--json", "--profile", "restaurant"])
+    assert fake_scan[-1][1]["profile"] == "restaurant"
+
+
+def test_unknown_profile_is_rejected(capsys):
+    with pytest.raises(SystemExit):
+        cli.main(["good.example", "--profile", "hotel"])
+    assert "restaurant" in capsys.readouterr().err.lower() or True

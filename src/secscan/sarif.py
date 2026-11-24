@@ -131,6 +131,8 @@ def to_sarif(results: Sequence[ScanResult], artifact_uri: str | None = None) -> 
                             "error": r.error,
                             "platform": r.platforms[0].platform if r.platforms else None,
                             "your_part": r.your_part.to_dict() if r.your_part else None,
+                            "profile": r.profile,
+                            "compliance": r.compliance.to_dict() if r.compliance else None,
                         }
                         for r in results
                     ]

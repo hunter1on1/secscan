@@ -27,7 +27,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 
-from secscan.models import Finding, Status
+from secscan.models import Category, Finding, Status
 
 YOU = "you"
 SETTINGS = "settings"
@@ -330,6 +330,10 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "cookies": ("cookie-secure", "cookie-httponly", "cookie-samesite", "cookies"),
     "tls": ("tls", "certificate", "hostname"),  # plus every "proto-*" id
     "redirect": ("https-redirect", "https-downgrade"),
+    "restaurant": (
+        "cookie-consent", "privacy-policy", "vat-number", "form-https",
+        "form-consent", "booking-widgets", "contact-links", "google-maps",
+    ),
 }  # fmt: skip
 
 _WIX_HEADERS = "https://support.wix.com/en/article/request-adding-and-customizing-security-headers"
@@ -411,6 +415,41 @@ CAPABILITIES: dict[str, dict[str, Capability]] = {
             "Replace http:// URLs in embeds, custom code and links to images you added.",
             "https://support.wix.com/en/article/troubleshooting-your-ssl-certificate",
         ),
+        "cookie-consent": Capability(
+            SETTINGS,
+            "Go to Privacy & Cookies in the site dashboard, click Add to Site next to "
+            "Add a cookie consent banner, then in Cookie Consent Banner turn on Show banner. "
+            "Wix uses Usercentrics for this (the older Wix Cookie Banner is no longer offered "
+            "to new sites).",
+            "https://support.wix.com/en/article/displaying-a-cookie-banner-on-your-site",
+        ),
+        "privacy-policy": Capability(
+            YOU,
+            "Publish a Privacy Policy page and link it in the footer and in the cookie banner. "
+            "Wix can host the page; a lawyer or a template should write the text. This is not "
+            "legal advice.",
+            "https://support.wix.com/en/article/displaying-a-cookie-banner-on-your-site",
+        ),
+        "vat-number": Capability(
+            YOU,
+            "Add the Partita IVA (and the legal name) in the footer, for example in a text "
+            "block on the master footer.",
+        ),
+        "form-https": Capability(
+            YOU,
+            "Wix sites are served over HTTPS; check any form that posts to an address you "
+            "typed in by hand.",
+        ),
+        "form-consent": Capability(
+            YOU,
+            "Add a short privacy note and a link next to email fields (a text element, or the "
+            "checkbox Wix forms provide).",
+        ),
+        "booking-widgets": Capability(
+            YOU,
+            "Use the official HTTPS embed for TheFork, OpenTable, Wix Bookings or whichever "
+            "service you use.",
+        ),
     },
     "squarespace": {
         "headers": Capability(
@@ -443,6 +482,30 @@ CAPABILITIES: dict[str, dict[str, Capability]] = {
         ),
         "mixed-content": Capability(
             YOU, "Replace http:// URLs in your custom code, embeds and integrations.", _SQ_SSL
+        ),
+        "cookie-consent": Capability(
+            SETTINGS,
+            "Open Settings > Website > Cookies and Data Privacy (the Cookies & Data Privacy "
+            "panel) and turn on the Cookie banner toggle. You can also add Manage cookies "
+            "and Decline all buttons. This is not legal advice.",
+            "https://support.squarespace.com/hc/en-us/articles/206545727-Providing-cookie-consent-options-with-a-banner",
+        ),
+        "privacy-policy": Capability(
+            YOU,
+            "Add a Privacy Policy page and link it in the footer and in the cookie banner.",
+            "https://support.squarespace.com/hc/en-us/articles/206545727-Providing-cookie-consent-options-with-a-banner",
+        ),
+        "vat-number": Capability(
+            YOU, "Add the Partita IVA in the site footer (a text block on the footer)."
+        ),
+        "form-https": Capability(
+            YOU, "Squarespace sites are served over HTTPS; check any custom form action you added."
+        ),
+        "form-consent": Capability(
+            YOU, "Add a short privacy note and a link next to email or newsletter fields."
+        ),
+        "booking-widgets": Capability(
+            YOU, "Use the official HTTPS embed for your booking or delivery partner."
         ),
     },
     "shopify": {
@@ -701,7 +764,8 @@ class YourPart:
 
 
 def your_part(findings: Iterable[Finding], detections: Sequence[Detection]) -> YourPart:
-    graded = [f for f in findings if f.status in (Status.PASS, Status.WARN, Status.FAIL)]
+    security = [f for f in findings if f.category != Category.RESTAURANT]
+    graded = [f for f in security if f.status in (Status.PASS, Status.WARN, Status.FAIL)]
     problems = [f for f in graded if f.status != Status.PASS]
     controllable = [f for f in graded if f.responsibility in (YOU, SETTINGS)]
     return YourPart(

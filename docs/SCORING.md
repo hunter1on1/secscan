@@ -64,3 +64,24 @@ session cookies, or mixed content neutralised by `upgrade-insecure-requests`.
 
 Each kind of problem is counted once per site, not once per cookie or per resource, so
 one misconfiguration repeated on 20 cookies doesn't sink the grade on its own.
+
+## Compliance score (`--profile restaurant`)
+
+The restaurant checks use the same 100-point bands, but as a **separate** score. Their
+deductions are never added to the security grade.
+
+| Finding | Points |
+|---------|-------:|
+| Tracking scripts or cookies on the first page, with no known consent banner | -20 |
+| No privacy or cookie policy link on the homepage (and none at the usual paths) | -15 |
+| Policy exists at a usual path but the homepage does not link to it | -5 |
+| Italian-looking page with no visible Partita IVA / VAT number | -5 |
+| Form posts to `http://`, or a password field is sent over HTTP | -20 |
+| Booking or delivery widget loaded over `http://` | -20 |
+| Google Maps embed loaded over `http://` | -10 |
+
+Info-only notes (contact links, a banner whose load order was not verified, an email form
+without a privacy sentence) do not cost points. A missing VAT number on a page that does
+not look Italian is also info.
+
+These checks are heuristics, and the report is **not legal advice**.

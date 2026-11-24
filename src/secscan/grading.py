@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from secscan.models import Finding
+from secscan.models import Category, Finding
 
 # (minimum score, grade), checked from the top down.
 GRADE_BANDS: list[tuple[int, str]] = [
@@ -25,13 +25,18 @@ GRADE_BANDS: list[tuple[int, str]] = [
 GRADE_ORDER = [grade for _, grade in GRADE_BANDS]  # best first
 
 
+def _security(findings: Iterable[Finding]) -> list[Finding]:
+    """Findings that affect the security grade (not restaurant/privacy checks)."""
+    return [f for f in findings if f.category != Category.RESTAURANT]
+
+
 def score_findings(findings: Iterable[Finding]) -> int:
-    """100 minus every deduction, never below 0."""
-    return max(0, 100 - sum(f.deduction for f in findings))
+    """100 minus every security deduction, never below 0."""
+    return max(0, 100 - sum(f.deduction for f in _security(findings)))
 
 
 def grade_for(score: int, findings: Iterable[Finding] = ()) -> str:
-    if any(f.critical for f in findings):
+    if any(f.critical for f in _security(findings)):
         return "F"
     for minimum, grade in GRADE_BANDS:
         if score >= minimum:
@@ -42,3 +47,9 @@ def grade_for(score: int, findings: Iterable[Finding] = ()) -> str:
 def meets_minimum(grade: str, minimum: str) -> bool:
     """True if `grade` is at least as good as `minimum` (e.g. "A" meets "B")."""
     return GRADE_ORDER.index(grade) <= GRADE_ORDER.index(minimum)
+
+
+def score_compliance(findings: Iterable[Finding]) -> int:
+    """100 minus deductions from restaurant/privacy findings only."""
+    restaurant = [f for f in findings if f.category == Category.RESTAURANT]
+    return max(0, 100 - sum(f.deduction for f in restaurant))

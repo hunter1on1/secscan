@@ -27,6 +27,7 @@ class Category(str, Enum):
     CORS = "cors"
     CONTENT = "content"  # what the page itself loads (mixed content)
     DISCLOSURE = "disclosure"  # security.txt and version leaks
+    RESTAURANT = "restaurant"  # privacy / booking checks (--profile restaurant)
 
 
 @dataclass
@@ -103,6 +104,9 @@ class ScanResult:
     # and the "your part" summary. Typed loosely to avoid an import cycle.
     platforms: list[Any] = field(default_factory=list)
     your_part: Any = None
+    # Set when the scan ran with --profile restaurant.
+    profile: str | None = None
+    compliance: Any = None  # Compliance; typed loosely to avoid an import cycle
 
     @property
     def primary_platform(self) -> Any:
@@ -119,6 +123,8 @@ class ScanResult:
             "platforms": [p.to_dict() for p in self.platforms],
             "primary_platform": self.platforms[0].platform if self.platforms else None,
             "your_part": self.your_part.to_dict() if self.your_part else None,
+            "profile": self.profile,
+            "compliance": self.compliance.to_dict() if self.compliance else None,
             "tls": asdict(self.tls) if self.tls else None,
             "findings": [f.to_dict() for f in self.findings],
         }

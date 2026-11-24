@@ -41,6 +41,7 @@ secscan example.com --sarif secscan.sarif  # SARIF 2.1.0 for GitHub code scannin
 secscan example.com --no-tls             # skip TLS probing
 secscan example.com --min-grade B        # exit code 1 if the grade is below B (for CI)
 secscan intranet.local --ca-bundle corp-ca.pem  # trust a custom/internal CA
+secscan example.com --profile restaurant        # privacy and booking checks
 ```
 
 | Option | Description |
@@ -49,6 +50,7 @@ secscan intranet.local --ca-bundle corp-ca.pem  # trust a custom/internal CA
 | `--explain` | Show a fix panel for every warning/failure, with config snippets |
 | `--platform LIST` | Comma separated. A hosting platform (`wix`, `squarespace`, `shopify`, `webflow`, `wordpress-com`, `wordpress`, `github-pages`, `netlify`, `vercel`, `cloudflare`) overrides detection; a config format (`nginx`, `apache`, `cloudflare`, `netlify`, `vercel`, `app`) chooses which `--explain` snippets to show |
 | `--no-detect` | Don't detect the hosting platform; every finding is treated as "you can fix" |
+| `--profile restaurant` | Add privacy and booking checks and a separate compliance score. The security grade does not change. |
 | `--json` | Print results as JSON to stdout (includes the fix advice) |
 | `--html PATH` | Write a self-contained HTML report (inline CSS, no scripts, works offline) |
 | `--sarif PATH` | Write SARIF 2.1.0 |
@@ -351,3 +353,33 @@ ruff format .     # format
 ```
 
 CI runs lint and tests on Python 3.10 to 3.13 for every push and pull request.
+
+## Restaurant profile
+
+`secscan example.com --profile restaurant` adds a **Restaurant & privacy compliance**
+section, aimed at restaurant websites (especially small sites in the EU / Italy, often
+built on Wix, Squarespace or WordPress). The checks are still passive: the homepage
+already fetched for the security scan, plus at most a few same-site pages a browser
+would open (for example `/privacy-policy` if the homepage has no policy link). No form
+is ever submitted.
+
+| Check | What it looks for |
+|-------|-------------------|
+| Cookie consent banner | Known platforms (Cookiebot, iubenda, OneTrust, Complianz, CookieYes, Usercentrics, Wix/Squarespace banners). Tracking scripts or cookies (Google Analytics, Meta Pixel, TikTok, Hotjar) in the *first* response with no banner are flagged as **likely** loaded before consent. If a banner is also present, load order is not verified. |
+| Privacy / cookie policy | A homepage link whose text or URL matches privacy, informativa, cookie policy, datenschutz, confidentialité, política de privacidad. |
+| VAT / Partita IVA | `P.IVA`, `Partita IVA` or `VAT` plus 11 digits, or `IT` plus 11 digits. A warning if the page looks Italian and none is found; otherwise a note. The number itself is not printed in the report. |
+| Form transport | `<form>` actions that post to `http://`, or a password field on a plain-HTTP page, are a failure. |
+| Form privacy notice | A form that collects an email, with no nearby privacy or consent wording, is reported as info. |
+| Booking and ordering widgets | TheFork, OpenTable, Resy, Quandoo, SevenRooms, Google Reserve, Just Eat, Deliveroo, Glovo, Uber Eats, Wix Bookings / Restaurants: listed as an inventory, failed if any embed is `http://`, and noted if a script comes from an unexpected host without Subresource Integrity. |
+| Contact links / Google Maps | `mailto:` and `tel:` links (info, which is normal) and Maps embeds (must be HTTPS). |
+
+These findings have their own **compliance** score and letter grade (the same 100-point
+bands as the security grade). They never change the security grade, so a site can be
+compared with a scan that did not use the profile.
+
+Fix advice is written for a restaurant owner, with platform steps when the site is
+detected as Wix or Squarespace (using those platforms' own help articles). **This is not
+legal advice.**
+
+How the compliance points are deducted is in [SCORING.md](SCORING.md). The ideas behind
+cookie consent are in [LEARNING.md](LEARNING.md#16-cookie-consent-and-gdpr-basics).

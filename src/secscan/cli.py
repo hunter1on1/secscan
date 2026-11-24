@@ -16,6 +16,7 @@ from secscan.grading import GRADE_ORDER, meets_minimum
 from secscan.html_report import write_html
 from secscan.platforms import PLATFORMS as HOSTING_PLATFORMS
 from secscan.report import render, to_json
+from secscan.restaurant import PROFILES
 from secscan.sarif import write_sarif
 from secscan.scanner import scan
 from secscan.tls import create_verified_context, probe_tls, resolve_ca_bundle
@@ -59,6 +60,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-detect",
         action="store_true",
         help="don't detect the hosting platform (generic advice, everything 'you can fix')",
+    )
+    parser.add_argument(
+        "--profile",
+        choices=PROFILES,
+        help="extra checks for that kind of site. 'restaurant' adds cookie consent, "
+        "privacy policy, forms and booking widgets, and a separate compliance score "
+        "(the security grade does not change)",
     )
     parser.add_argument(
         "--no-tls", action="store_true", help="skip certificate and protocol checks (headers only)"
@@ -144,6 +152,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             ca_bundle=args.ca_bundle,
             platform=hosting,
             detect=not args.no_detect,
+            profile=args.profile,
         )
 
     results = []
