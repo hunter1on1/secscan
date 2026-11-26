@@ -43,6 +43,8 @@ $ secscan example.com
  ...
 ```
 
+![Sample HTML report for example.com](docs/images/sample-report.png)
+
 ## Install
 
 Requires Python 3.10 or newer.

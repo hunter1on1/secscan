@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "secscan"
-version = "0.2.0"
+version = "0.3.0"
 description = "Grade a website's security headers, cookies, CORS, mixed content, security.txt and TLS from the command line, with fix advice and HTML/SARIF reports."
 readme = "README.md"
 license = { text = "MIT" }
